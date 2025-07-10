@@ -28,56 +28,55 @@ class InstagramService extends BaseService
         if (!is_dir($outputDir)) {
             mkdir($outputDir, 0777, true);
         }
-        $outputTemplate = $outputDir . '/%(title)s.%(ext)s';
-        $cmd = "/usr/local/bin/yt-dlp --no-warnings --quiet --restrict-filenames --no-playlist --external-downloader=aria2c --external-downloader-args='-x 16 -k 1M' -o '{$outputTemplate}' '{$url}'";
+
+        // 📌 Уникальное имя для каждой ссылки
+        $hash = md5($url);
+        $outputTemplate = "{$outputDir}/{$hash}.%(ext)s";
+
+        // 📥 Скачиваем
+        $cmd = "{$this->ytBin} --no-warnings --quiet --restrict-filenames --no-playlist --external-downloader=aria2c --external-downloader-args='-x 16 -k 1M' -o '{$outputTemplate}' '{$url}'";
         exec($cmd, $out, $code);
+
         if ($code !== 0) {
+            \Log::error("yt-dlp вернул код $code при скачивании $url");
             return null;
         }
-        $files = glob($outputDir . '/*');
-        $latestFiles = [];
-        $latestTime = 0;
-        foreach ($files as $file) {
-            if (filemtime($file) > $latestTime) {
-                $latestTime = filemtime($file);
-            }
+
+        // 📁 Находим скачанные файлы
+        $files = glob("{$outputDir}/{$hash}.*");
+
+        if (empty($files)) {
+            return null;
         }
-        foreach ($files as $file) {
-            if ($latestTime - filemtime($file) <= 120) {
-                $latestFiles[] = $file;
-            }
-        }
-        // Оставляем только видео-файлы
-        $videoFiles = [];
-        foreach ($latestFiles as $file) {
+
+        // 🎥 Оставляем только видео
+        $videoFiles = array_filter($files, function ($file) {
             $ext = strtolower(pathinfo($file, PATHINFO_EXTENSION));
-            if (in_array($ext, ['mp4', 'mkv', 'webm'])) {
-                $videoFiles[] = $file;
-            }
-        }
+            return in_array($ext, ['mp4', 'mkv', 'webm']);
+        });
+
         if (empty($videoFiles)) {
             return null;
         }
+
         if (count($videoFiles) === 1) {
             $path = $videoFiles[0];
-            $ext = strtolower(pathinfo($path, PATHINFO_EXTENSION));
             return [
                 'path' => $path,
-                'ext' => $ext,
+                'ext' => pathinfo($path, PATHINFO_EXTENSION),
                 'type' => 'video',
+                'title' => $hash,
             ];
         }
-        $paths = [];
-        $exts = [];
-        foreach ($videoFiles as $file) {
-            $ext = strtolower(pathinfo($file, PATHINFO_EXTENSION));
-            $paths[] = $file;
-            $exts[] = $ext;
-        }
+
+        // 📦 Несколько файлов
         return [
-            'paths' => $paths,
-            'exts' => $exts,
-            'types' => array_fill(0, count($paths), 'video'),
+            'paths' => array_values($videoFiles),
+            'exts' => array_map(function ($file) {
+                return pathinfo($file, PATHINFO_EXTENSION);
+            }, $videoFiles),
+            'types' => array_fill(0, count($videoFiles), 'video'),
+            'title' => $hash,
         ];
     }
 }

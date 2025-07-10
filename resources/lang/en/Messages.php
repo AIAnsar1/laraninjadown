@@ -80,6 +80,7 @@ return [
     'ok_video_downloaded' => '✅ Your video from OK! @NinjaDownloaderBot',
     'vimeo_video_downloaded' => '✅ Your video from Vimeo! @NinjaDownloaderBot',
     'facebook_video_downloaded' => '✅ Your video from Facebook! @NinjaDownloaderBot',
+    'facebook_video_downloaded' => '✅ Your video from Facebook! @NinjaDownloaderBot',
 ];
 
 

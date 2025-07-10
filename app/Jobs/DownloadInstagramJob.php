@@ -92,7 +92,7 @@ class DownloadInstagramJob implements ShouldQueue
                 [
                     'file_id' => $fileId,
                     'formats' => 'video',
-                    'title' => $result['title'] ?? '',
+                    'title' => md5($this->url),
                     'quality' => 'video',
                     'chat_id' => $cacheChannel,
                     'message_id' => $msg?->message_id,
