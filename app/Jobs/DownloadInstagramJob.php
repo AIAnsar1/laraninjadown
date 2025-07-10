@@ -80,7 +80,7 @@ class DownloadInstagramJob implements ShouldQueue
                     break;
                 }
             } catch (\Throwable $e) {
-                \Log::error("Ошибка при отправке видео в приватный канал: " . $e->getMessage());
+                Log::error("Ошибка при отправке видео в приватный канал: " . $e->getMessage());
                 continue;
             }
         }

@@ -9,7 +9,7 @@ use YoutubeDl\YoutubeDl;
 use YoutubeDl\Exception\YoutubeDlException;
 use Symfony\Component\Process\Process;
 use Symfony\Component\Process\Exception\ProcessFailedException;
-
+use Illuminate\Support\Facades\Log;
 
 
 
@@ -38,7 +38,7 @@ class InstagramService extends BaseService
         exec($cmd, $out, $code);
 
         if ($code !== 0) {
-            \Log::error("yt-dlp вернул код $code при скачивании $url");
+            Log::error("yt-dlp вернул код $code при скачивании $url");
             return null;
         }
 

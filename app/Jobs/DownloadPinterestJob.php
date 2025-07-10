@@ -2,63 +2,108 @@
 
 namespace App\Jobs;
 
+use App\Services\PinterestService;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
-use Illuminate\Queue\InteractsWithQueue;
-use Illuminate\Queue\SerializesModels;
+use Illuminate\Queue\{InteractsWithQueue, SerializesModels};
 use SergiX44\Nutgram\Nutgram;
+use SergiX44\Nutgram\Telegram\Types\Input\{InputMediaAudio, InputMediaVideo, InputMediaPhoto, InputMediaDocument};
+use Illuminate\Support\Facades\Log;
+use App\Models\{TelegramUser, ContentCache};
 use SergiX44\Nutgram\Telegram\Types\Internal\InputFile;
 
 class DownloadPinterestJob implements ShouldQueue
 {
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
-    public $userId, $url, $messageId, $chatId, $statusMsgId;
+    public $userId, $url, $type, $messageId, $chatId, $statusMsgId;
 
-    public function __construct($userId, $url, $messageId, $chatId, $statusMsgId)
+    /**
+     * @var PinterestService
+     */
+    private PinterestService $pg_service;
+
+    /**
+     * Create a new job instance.
+     */
+    public function __construct($userId, $url, $type, $messageId, $chatId, $statusMsgId)
     {
         $this->userId = $userId;
         $this->url = $url;
+        $this->type = $type;
         $this->messageId = $messageId;
         $this->chatId = $chatId;
         $this->statusMsgId = $statusMsgId;
     }
 
-    public function handle()
+    /**
+     * Execute the job.
+     */
+    public function handle(Nutgram $bot, PinterestService $pg_service)
     {
-        $bot = app(Nutgram::class);
-        $userQueueKey = "user_queue_{$this->userId}";
-        $activeKey = "active_download_{$this->userId}";
-        $statusKey = "download_status_{$this->userId}_" . md5($this->url);
-        $bot->editMessageText('⏳ Скачивание...', chat_id: $this->chatId, message_id: $this->statusMsgId);
-        $service = app(\App\Services\PinterestService::class);
-        $result = $service->download($this->url);
-        if ($result && file_exists($result['path'])) {
+        $lang = $bot->user()?->language ?? 'ru';
+        $caption = __('Messages.instagram_video_downloaded', [], $lang);
+        $result = $pg_service->download($this->url);
+
+        if (!$result) {
+            $bot->editMessageText(__('Messages.no_video_found', [], $lang), chat_id: $this->chatId, message_id: $this->statusMsgId);
+            return;
+        }
+
+        $paths = [];
+        if (isset($result['path'])) {
+            $paths[] = $result['path'];
+        } elseif (isset($result['paths'])) {
+            $paths = $result['paths'];
+        }
+
+        if (empty($paths)) {
+            $bot->editMessageText(__('Messages.no_video_found', [], $lang), chat_id: $this->chatId, message_id: $this->statusMsgId);
+            return;
+        }
+
+        $cacheChannel = config('nutgram.cache_channel');
+        $fileId = null;
+        $msg = null;
+
+        foreach ($paths as $path) {
+            try {
+                // Загружаем в приватный канал
+                $msg = $bot->sendVideo(
+                    InputFile::make($path),
+                    chat_id: $cacheChannel,
+                );
+                $fileId = $msg->video->file_id ?? $msg->document->file_id ?? $msg->animation->file_id ?? null;
+                if ($fileId) {
+                    break;
+                }
+            } catch (\Throwable $e) {
+                Log::error("Ошибка при отправке видео в приватный канал: " . $e->getMessage());
+                continue;
+            }
+        }
+
+        if ($fileId) {
+            // Кэшируем file_id
+            ContentCache::updateOrCreate(
+                ['content_link' => $this->url],
+                [
+                    'file_id' => $fileId,
+                    'formats' => 'video',
+                    'title' => md5($this->url),
+                    'quality' => 'video',
+                    'chat_id' => $cacheChannel,
+                    'message_id' => $msg?->message_id,
+                ]
+            );
             $bot->editMessageMedia(
-                \SergiX44\Nutgram\Telegram\Types\InputMedia\InputMediaVideo::make()
-                    ->media(new InputFile($result['path']))
-                    ->caption('Ваше видео готово!'),
+                media: InputMediaVideo::make($fileId, caption: $caption),
                 chat_id: $this->chatId,
                 message_id: $this->statusMsgId
             );
-            @unlink($result['path']);
         } else {
-            $bot->editMessageText('❌ Ошибка при скачивании видео.', chat_id: $this->chatId, message_id: $this->statusMsgId);
-        }
-        // Удаляем active_download
-        cache()->forget($activeKey);
-        // Берём следующую ссылку из очереди
-        $queue = cache()->get($userQueueKey, []);
-        if (!empty($queue)) {
-            $next = array_shift($queue);
-            cache()->put($userQueueKey, $queue, 600);
-            $nextStatusKey = "download_status_{$this->userId}_" . md5($next['url']);
-            $bot->editMessageText('⏳ Скачивание...', chat_id: $next['chat_id'], message_id: cache()->get($nextStatusKey));
-            cache()->put($activeKey, $next['url'], 600);
-            \App\Jobs\DownloadPinterestJob::dispatch(
-                $this->userId, $next['url'], $next['message_id'], $next['chat_id'], cache()->get($nextStatusKey)
-            )->onQueue('pinterest');
+            $bot->editMessageText('❌ ' . __('Messages.download_error', [], $lang), chat_id: $this->chatId, message_id: $this->statusMsgId);
         }
     }
 }

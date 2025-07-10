@@ -8,6 +8,8 @@ use YoutubeDl\{YoutubeDl, Options};
 use YoutubeDl\Exception\YoutubeDlException;
 use Symfony\Component\Process\Process;
 use Symfony\Component\Process\Exception\ProcessFailedException;
+use Illuminate\Support\Str;
+
 
 
 class PinterestService extends BaseService
@@ -21,18 +23,16 @@ class PinterestService extends BaseService
 
     public function download(string $url): array|false
     {
-        $outputPath = storage_path('app/pinterest');
-
-        if (!is_dir($outputPath)) {
-            mkdir($outputPath, 0777, true);
-            logger()->info("Создана папка для загрузки: $outputPath");
+        $outputDir = storage_path('app/pinterest');
+        if (!is_dir($outputDir)) {
+            mkdir($outputDir, 0777, true);
+            logger()->info("Создана папка для загрузки: $outputDir");
         }
 
-        $filenameTemplate = '%(title)s.%(ext)s';
+        $outputTemplate = $outputDir . '/%(title)s.%(ext)s';
         $cookiesPath = storage_path('cookies.txt');
-        $type = 'media'; // Можно позже различать photo / video, если надо
 
-        $command = [
+        $cmd = [
             $this->ytBin,
             '--no-warnings',
             '--quiet',
@@ -40,17 +40,18 @@ class PinterestService extends BaseService
             '--no-playlist',
             '--external-downloader=aria2c',
             '--external-downloader-args=aria2c:-x 16 -k 1M',
-            '-o', $outputPath . '/' . $filenameTemplate,
+            '--user-agent=Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:140.0) Gecko/20100101 Firefox/140.0',
+            '-o', $outputTemplate,
             $url,
         ];
 
         if (file_exists($cookiesPath)) {
-            $command[] = '--cookies=' . $cookiesPath;
+            $cmd[] = '--cookies=' . $cookiesPath;
         }
 
-        logger()->info('yt-dlp command', ['command' => implode(' ', $command)]);
+        logger()->info('yt-dlp command', ['command' => implode(' ', $cmd)]);
 
-        $process = new Process($command);
+        $process = new \Symfony\Component\Process\Process($cmd);
         $process->run();
 
         logger()->info('yt-dlp stdout', ['stdout' => $process->getOutput()]);
@@ -61,27 +62,58 @@ class PinterestService extends BaseService
             return false;
         }
 
-        $files = glob($outputPath . '/*');
-        logger()->info('yt-dlp output dir', ['files' => $files]);
+        $files = glob($outputDir . '/*');
 
-        $latestFile = collect($files)
-            ->map(fn($path) => ['path' => $path, 'time' => filemtime($path)])
-            ->sortByDesc('time')
-            ->first();
+        // Фильтруем файлы, созданные за последние 2 минуты
+        $latestTime = time();
+        $recentFiles = array_filter($files, function ($file) use ($latestTime) {
+            return $latestTime - filemtime($file) <= 120;
+        });
 
-        if (!$latestFile) {
-            logger()->warning("yt-dlp не вернул файл для URL: $url. Содержимое папки:", $files);
+        // Оставляем только видео/изображения
+        $mediaFiles = array_filter($recentFiles, function ($file) {
+            $ext = strtolower(pathinfo($file, PATHINFO_EXTENSION));
+            return in_array($ext, ['mp4', 'mkv', 'webm', 'jpg', 'jpeg', 'png']);
+        });
+
+        if (empty($mediaFiles)) {
+            logger()->warning("yt-dlp не вернул медиа-файлов для: $url");
             return false;
         }
 
-        logger()->info('yt-dlp latest file', ['file' => $latestFile]);
+        // Один файл
+        if (count($mediaFiles) === 1) {
+            $path = array_values($mediaFiles)[0];
+            return [
+                'path' => $path,
+                'ext' => pathinfo($path, PATHINFO_EXTENSION),
+                'type' => $this->detectType($path),
+                'title' => pathinfo($path, PATHINFO_FILENAME),
+                'url' => $url,
+            ];
+        }
+
+        // Несколько файлов
+        $paths = [];
+        $exts = [];
+        foreach ($mediaFiles as $file) {
+            $paths[] = $file;
+            $exts[] = pathinfo($file, PATHINFO_EXTENSION);
+        }
 
         return [
-            'path' => $latestFile['path'],
-            'title' => basename($latestFile['path']),
-            'ext' => pathinfo($latestFile['path'], PATHINFO_EXTENSION),
+            'paths' => $paths,
+            'exts' => $exts,
+            'types' => array_map([$this, 'detectType'], $paths),
+            'title' => Str::slug(pathinfo($paths[0], PATHINFO_FILENAME)),
             'url' => $url,
-            'pt_type' => $type,
         ];
     }
+
+    private function detectType(string $file): string
+    {
+        $ext = strtolower(pathinfo($file, PATHINFO_EXTENSION));
+        return in_array($ext, ['mp4', 'mkv', 'webm']) ? 'video' : 'photo';
+    }
 }
+
