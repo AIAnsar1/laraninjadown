@@ -33,6 +33,7 @@ class OkService extends BaseService
             '--restrict-filenames',
             '--merge-output-format', 'mp4',
             '--print', 'filename',
+            '--user-agent=Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:140.0) Gecko/20100101 Firefox/140.0',
             '-o', $filenameTemplate,
             $url,
         ];

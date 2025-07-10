@@ -144,6 +144,7 @@ class YouTubeService extends BaseService
             '--merge-output-format', 'mp4',
             '--external-downloader=aria2c',
             '--external-downloader-args=aria2c:-x 16 -k 1M',
+            '--user-agent=Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:140.0) Gecko/20100101 Firefox/140.0',
             '-f', 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
             '-o', $outputPath . '/' . $filenameTemplate,
             $url,

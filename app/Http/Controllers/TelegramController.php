@@ -10,7 +10,7 @@ use App\Services\{TikTokService, YouTubeService, PinterestService, InstagramServ
 use SergiX44\Nutgram\Telegram\Types\Internal\InputFile;
 use SergiX44\Nutgram\Telegram\Types\Input\{InputMediaAudio, InputMediaVideo, InputMediaPhoto, InputMediaDocument};
 use App\Models\ContentCache;
-use App\Jobs\{DownloadInstagramJob, DownloadTikTokJob, DownloadPinterestJob};
+use App\Jobs\{DownloadInstagramJob, DownloadTikTokJob, DownloadPinterestJob, DownloadXJob};
 use Illuminate\Support\Facades\Log;
 
 class TelegramController extends Controller
@@ -159,47 +159,45 @@ class TelegramController extends Controller
         }
         $statusMsg = $bot->sendMessage('⏳ ' . __('Messages.queued', [], $lang), reply_to_message_id: $messageId);
         $statusMsgId = $statusMsg->message_id;
-        DownloadPinterestJob::dispatch($bot->userId(), $url, 'instagram', $messageId, $chatId, $statusMsgId);
+        DownloadXJob::dispatch($bot->userId(), $url, 'instagram', $messageId, $chatId, $statusMsgId);
     }
 
     public function downloadFacebook(Nutgram $bot, string $url): void
     {
-        $this->downloadMedia($bot, $url, 'Facebook', function($url) {
-            $service = app(FacebookService::class);
-            return $service->download($url);
-        });
+        //
     }
 
     public function downloadOk(Nutgram $bot, string $url): void
     {
-        $this->downloadMedia($bot, $url, 'OK', function($url) {
-            $service = app(OkService::class);
-            return $service->download($url);
-        });
+        //
     }
 
     public function downloadVimeo(Nutgram $bot, string $url): void
     {
-        $this->downloadMedia($bot, $url, 'Vimeo', function($url) {
-            $service = app(VimeoService::class);
-            return $service->download($url);
-        });
+        //
     }
 
     public function downloadVk(Nutgram $bot, string $url): void
     {
-        $this->downloadMedia($bot, $url, 'VK', function($url) {
-            $service = app(\App\Services\Vk::class);
-            return $service->download($url);
-        });
+        //
     }
 
     public function downloadX(Nutgram $bot, string $url): void
     {
-        $this->downloadMedia($bot, $url, 'X (Twitter)', function($url) {
-            $service = app(\App\Services\X::class);
-            return $service->download($url);
-        });
+        $lang = $bot->user()?->language ?? 'ru';
+        $caption = __('Messages.instagram_video_downloaded', [], $lang);
+        $messageId = $bot->message()->message_id;
+        $chatId = $bot->chatId();
+        $cache = ContentCache::where('content_link', $url)->first();
+
+        if ($cache && $cache->file_id)
+        {
+            $bot->sendVideo($cache->file_id, caption: $caption, chat_id: $chatId, reply_to_message_id: $messageId);
+            return;
+        }
+        $statusMsg = $bot->sendMessage('⏳ ' . __('Messages.queued', [], $lang), reply_to_message_id: $messageId);
+        $statusMsgId = $statusMsg->message_id;
+        DownloadInstagramJob::dispatch($bot->userId(), $url, 'instagram', $messageId, $chatId, $statusMsgId);
     }
 
     /**

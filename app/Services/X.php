@@ -27,11 +27,16 @@ class X extends BaseService
             mkdir($outputPath, 0777, true);
             logger()->info("Создана папка для загрузки: $outputPath");
         }
-        $filenameTemplate = '%(title)s.%(ext)s';
-        $cookiesPath = storage_path('cookies.txt'); // если надо
 
-        $type = 'video'; // Для X/Twitter всегда video, но можно расширить
-        // Если в будущем появятся X Clips или X Music, можно добавить сюда
+        // Очистим старые файлы (например, старше 10 минут)
+        collect(glob($outputPath . '/*'))->each(function ($file) {
+            if (filemtime($file) < now()->subMinutes(10)->getTimestamp()) {
+                unlink($file);
+            }
+        });
+
+        $filenameTemplate = '%(title)s.%(ext)s';
+        $cookiesPath = storage_path('cookies_x.txt'); // если авторизация нужна
 
         $command = [
             $this->ytBin,
@@ -39,7 +44,8 @@ class X extends BaseService
             '--quiet',
             '--restrict-filenames',
             '--no-playlist',
-            '-f', 'mp4',
+            '--user-agent=Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:140.0) Gecko/20100101 Firefox/140.0',
+            '-f', 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/mp4',
             '-o', $outputPath . '/' . $filenameTemplate,
             $url,
         ];
@@ -64,7 +70,6 @@ class X extends BaseService
         $files = glob($outputPath . '/*');
         logger()->info('yt-dlp output dir', ['files' => $files]);
 
-        // Найти последний скачанный файл
         $latestFile = collect($files)
             ->map(fn($path) => ['path' => $path, 'time' => filemtime($path)])
             ->sortByDesc('time')
@@ -75,14 +80,10 @@ class X extends BaseService
             return false;
         }
 
-        logger()->info('yt-dlp latest file', ['file' => $latestFile]);
-
         return [
-            'path' => $latestFile['path'],
-            'title' => basename($latestFile['path']),
-            'ext' => pathinfo($latestFile['path'], PATHINFO_EXTENSION),
-            'url' => $url,
-            'x_type' => $type,
+            'paths' => [$latestFile['path']],
+            'exts' => [pathinfo($latestFile['path'], PATHINFO_EXTENSION)],
+            'type' => 'video',
         ];
     }
 }

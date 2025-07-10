@@ -34,7 +34,7 @@ class InstagramService extends BaseService
         $outputTemplate = "{$outputDir}/{$hash}.%(ext)s";
 
         // 📥 Скачиваем
-        $cmd = "{$this->ytBin} --no-warnings --quiet --restrict-filenames --no-playlist --external-downloader=aria2c --external-downloader-args='-x 16 -k 1M' -o '{$outputTemplate}' '{$url}'";
+        $cmd = "{$this->ytBin} --no-warnings --quiet --restrict-filenames --no-playlist --external-downloader=aria2c --external-downloader-args='-x 16 -k 1M' '--user-agent=Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:140.0) Gecko/20100101 Firefox/140.0' -o '{$outputTemplate}' '{$url}'";
         exec($cmd, $out, $code);
 
         if ($code !== 0) {
