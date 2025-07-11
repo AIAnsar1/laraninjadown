@@ -18,7 +18,7 @@ return [
     |
     */
 
-    'default' =>  env('LOG_CHANNEL', 'stack'),
+    'default' => env('LOG_CHANNEL', 'stack'),
 
     /*
     |--------------------------------------------------------------------------
@@ -125,24 +125,6 @@ return [
 
         'emergency' => [
             'path' => storage_path('logs/laravel.log'),
-        ],
-
-        'nutgram' => [
-            'driver' => 'monolog',
-            'level' => 'info',
-            'handler' => StreamHandler::class,
-            'formatter' => Nutgram\Laravel\Log\NutgramFormatter::class,
-            'with' => [
-                'stream' => storage_path('logs/nutgram.log'),
-            ],
-            'processors' => [PsrLogMessageProcessor::class],
-        ],
-
-        'telegram' => [
-            'driver' => 'custom',
-            'via' => \Nutgram\Laravel\Log\NutgramLogger::class,
-            'level' => 'info',
-            'chat_id' => env('TELEGRAM_LOG_CHANNEL', '123456789'),
         ],
 
     ],

@@ -15,144 +15,51 @@ use Symfony\Component\Process\Exception\ProcessFailedException;
 
 class YouTubeService extends BaseService
 {
-    private YoutubeDl $yt;
-    private string $downloadPath;
+    protected string $ytBin;
+    protected string $downloadPath;
 
     public function __construct()
     {
-        $this->yt = new YoutubeDl();
-        // путь к yt‑dlp (лучше брать из .env)
-        $this->yt->setBinPath(config('services.ytdlp.bin', '/usr/local/bin/yt-dlp'));
-
+        $this->ytBin = config('services.ytdlp.bin', '/usr/local/bin/yt-dlp');
         $this->downloadPath = storage_path('app/youtube');
     }
 
     /**
-     * Скачивает аудио или видео.
-     *
-     * @param string      $url     ссылка на ролик
-     * @param 'audio'|'video' $type    тип контента
-     * @param string|null $format  mp3/mp4/webm/«best» — любой spec yt‑dlp
-     * @return array|null
+     * Скачивает аудио или видео
      */
-    public function fetch(string $url, string $type = 'video', ?string $format = null): ?array
+    public function fetch(string $url, string $type = 'video', ?string $format = null): array|false
     {
-        try {
-            $opts = Options::create()
-                ->downloadPath($this->downloadPath)
-                ->output('%(title)s.%(ext)s')
-                ->url($url);
-
-            if ($type === 'audio') {
-                $opts = $opts
-                    ->extractAudio(true)
-                    ->audioFormat($format ?? 'mp3')
-                    ->audioQuality('0');           // «best»
-            } else { // video
-                if ($format) {
-                    $opts = $opts->format($format); // пример: 'mp4' или 'bestvideo+bestaudio'
-                }
-            }
-
-            /** @var Video $video */
-            $video = $this->yt->download($opts)->getVideos()[0];
-
-            if ($video->getError()) {
-                throw new \RuntimeException($video->getError());
-            }
-
-            return [
-                'path'   => $video->getFile()->getRealPath(),
-                'title'  => $video->getTitle(),
-                'ext'    => $video->getExt(),
-                'url'    => $url,
-                'type'   => $type,
-                'size'   => $video->getFilesize(), // bytes
-            ];
-        } catch (\Throwable $e) {
-            report($e); // Laravel helper
-            return null;
-        }
-    }
-
-    /**
-     * Получить доступные форматы видео (mp4 с высотой)
-     * @param string $url
-     * @return array
-     */
-    public function getAvailableFormats(string $url): array
-    {
-        try {
-            $video = $this->yt->download(
-                Options::create()
-                    ->url($url)
-                    ->downloadPath(storage_path('app/temp')) // обязательно!
-                    ->skipDownload(true)
-                    ->output('%(title)s.%(ext)s')
-            )->getVideos()[0];
-
-            if ($video->getError()) {
-                Log::error('YT ERROR: ' . $video->getError());
-                return [];
-            }
-
-            $formats = [];
-            foreach ($video->getFormats() as $format) {
-                if (!$format->getFormatId()) continue;
-
-                $formats[] = [
-                    'itag'     => $format->getFormatId(),
-                    'height'   => $format->getHeight() ?? 0,
-                    'filesize' => $format->getFilesize() ?? 0,
-                ];
-            }
-
-
-            return $formats;
-        } catch (\Throwable $e) {
-            Log::error('getAvailableFormats EXCEPTION: ' . $e->getMessage());
-            return [];
-        }
-    }
-
-    public function download(string $url): array|false
-    {
-        $outputPath = storage_path('app/youtube');
-        if (!is_dir($outputPath)) {
-            mkdir($outputPath, 0777, true);
-            logger()->info("Создана папка для загрузки: $outputPath");
-        }
-
-        // Приведение shorts → watch?v=
-        if (str_contains($url, 'youtube.com/shorts/')) {
-            $url = preg_replace('#shorts/([^?/]+)#', 'watch?v=$1', $url);
-        }
-
-        // Очистка предыдущих .json-файлов
-        foreach (glob($outputPath . '/*.json') as $f) {
-            unlink($f);
+        if (!is_dir($this->downloadPath)) {
+            mkdir($this->downloadPath, 0777, true);
         }
 
         $filenameTemplate = '%(title)s.%(ext)s';
-        $cookiesPath = storage_path('cookies.txt');
+        $outputPath = $this->downloadPath;
+
         $command = [
-            '/usr/local/bin/yt-dlp',
+            $this->ytBin,
             '--no-warnings',
             '--quiet',
-            '--restrict-filenames',
             '--no-playlist',
+            '--restrict-filenames',
             '--merge-output-format', 'mp4',
-            '--external-downloader=aria2c',
-            '--external-downloader-args=aria2c:-x 16 -k 1M',
             '--user-agent=Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:140.0) Gecko/20100101 Firefox/140.0',
-            '-f', 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
-            '-o', $outputPath . '/' . $filenameTemplate,
-            $url,
+            '-o', "$outputPath/$filenameTemplate",
         ];
 
-        if (file_exists($cookiesPath)) {
-            $command[] = '--cookies=' . $cookiesPath;
+        // Аудио или видео
+        if ($type === 'audio') {
+            $command[] = '--extract-audio';
+            $command[] = '--audio-format=' . ($format ?? 'mp3');
+            $command[] = '--audio-quality=0';
+        } else {
+            if ($format) {
+                $command[] = '-f';
+                $command[] = $format; // например: 'bestvideo[height=720]+bestaudio/best'
+            }
         }
+
+        $command[] = $url;
 
         $process = new Process($command);
         $process->run();
@@ -162,8 +69,8 @@ class YouTubeService extends BaseService
             return false;
         }
 
-        // Получаем только медиа (а не json-файлы)
-        $files = array_filter(glob($outputPath . '/*'), fn($f) => !str_ends_with($f, '.json'));
+        // Найдём последний скачанный файл
+        $files = array_filter(glob("$outputPath/*"), fn($f) => !str_ends_with($f, '.json'));
 
         $latestFile = collect($files)
             ->map(fn($path) => ['path' => $path, 'time' => filemtime($path)])
@@ -178,15 +85,60 @@ class YouTubeService extends BaseService
             'path' => $latestFile['path'],
             'title' => basename($latestFile['path']),
             'ext' => pathinfo($latestFile['path'], PATHINFO_EXTENSION),
+            'type' => $type,
             'url' => $url,
-            'yt_type' => 'video',
         ];
     }
 
-
     /**
-     * Проверка, является ли ссылка YouTube/Shorts
+     * Получить доступные форматы: height + размер
      */
+    public function getAvailableFormats(string $url): array
+    {
+        $command = [
+            $this->ytBin,
+            '--no-warnings',
+            '--skip-download',
+            '--print-json',
+            '--no-playlist',
+            '--restrict-filenames',
+            '--user-agent=Mozilla/5.0',
+            $url
+        ];
+
+        $process = new Process($command);
+        $process->run();
+
+        if (!$process->isSuccessful()) {
+            logger()->error("yt-dlp format list failed: " . $process->getErrorOutput());
+            return [];
+        }
+
+        $output = $process->getOutput();
+        $data = json_decode($output, true);
+        if (!is_array($data) || !isset($data['formats'])) {
+            return [];
+        }
+
+        $formats = [];
+
+        foreach ($data['formats'] as $format) {
+            $itag = $format['format_id'] ?? null;
+            $height = $format['height'] ?? null;
+            $filesize = $format['filesize'] ?? null;
+
+            if ($itag && $height && $filesize) {
+                $formats[] = [
+                    'itag' => $itag,
+                    'height' => $height,
+                    'filesize' => $filesize,
+                ];
+            }
+        }
+
+        return $formats;
+    }
+
     public function isYoutubeUrl(string $url): bool
     {
         return preg_match('~^https?://(www\.)?(youtube\.com|youtu\.be)/~i', $url);

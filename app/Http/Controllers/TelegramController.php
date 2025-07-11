@@ -10,7 +10,7 @@ use App\Services\{TikTokService, YouTubeService, PinterestService, InstagramServ
 use SergiX44\Nutgram\Telegram\Types\Internal\InputFile;
 use SergiX44\Nutgram\Telegram\Types\Input\{InputMediaAudio, InputMediaVideo, InputMediaPhoto, InputMediaDocument};
 use App\Models\ContentCache;
-use App\Jobs\{DownloadInstagramJob, DownloadTikTokJob, DownloadPinterestJob, DownloadXJob};
+use App\Jobs\{DownloadInstagramJob, DownloadTikTokJob, DownloadPinterestJob, DownloadXJob, DownloadYouTubeAudioJob};
 use Illuminate\Support\Facades\Log;
 
 class TelegramController extends Controller
@@ -99,6 +99,7 @@ class TelegramController extends Controller
             foreach ($matches[0] as $url)
             {
                 $url = trim($url);
+                $lang = $bot->user()?->language ?? 'ru';
 
                 if (preg_match('~instagram\.com~i', $url)) {
                     $this->downloadInstagram($bot, $url);
@@ -110,6 +111,17 @@ class TelegramController extends Controller
                     $this->downloadX($bot, $url);
                 } elseif (preg_match('~tiktok\.com~i', $url, $matches)) {
                     $this->downloadTikTok($bot, $url);
+                } elseif (preg_match('~(?:youtube\.com|youtu\.be)~i', $url)) {
+                    $hash = md5($url);
+                    cache()->put('yt_url_' . $hash, $url, now()->addMinutes(30));
+
+                    $keyboard = InlineKeyboardMarkup::make()->addRow(
+                        InlineKeyboardButton::make('🎵 Аудио', callback_data: "yt:audio:$hash"),
+                        InlineKeyboardButton::make('📺 Видео', callback_data: "yt:video:$hash"),
+                    );
+                    $messageId = $bot->message()->message_id;
+                    $chatId = $bot->chatId();
+                    $bot->sendMessage(__('Messages.choose_download_type', [], $lang), reply_markup: $keyboard, reply_to_message_id: $messageId);
                 }
             }
         }
@@ -166,7 +178,7 @@ class TelegramController extends Controller
         }
         $statusMsg = $bot->sendMessage('⏳ ' . __('Messages.queued', [], $lang), reply_to_message_id: $messageId);
         $statusMsgId = $statusMsg->message_id;
-        DownloadXJob::dispatch($bot->userId(), $url, 'pinterest', $messageId, $chatId, $statusMsgId);
+        DownloadPinterestJob::dispatch($bot->userId(), $url, 'pinterest', $messageId, $chatId, $statusMsgId);
     }
 
 
@@ -197,80 +209,42 @@ class TelegramController extends Controller
         $data = $bot->callbackQuery()?->data;
 
         if (!preg_match('~^yt:audio:([a-f0-9]+)$~', $data, $m)) {
-            $bot->sendMessage('Ошибка: нев��рный формат callback_data!');
+            $bot->sendMessage('❌ Неверный формат.');
             return;
         }
-
         $hash = $m[1];
         $url = cache()->get('yt_url_' . $hash);
+
         if (!$url) {
-            $bot->sendMessage('Ошибка: ссылка не найдена (hash устарел или не сохранён).');
+            $bot->sendMessage('❌ Ссылка устарела или не найдена.');
             return;
         }
-
         $lang = $this->getUserLang($bot);
-        $chat_id = $bot->chatId();
-        $message_id = $bot->callbackQuery()?->message?->message_id;
-
-        // Меняем текст на "⏳ Скачивание..."
-        $bot->editMessageText('⏳ Скачивание...', chat_id: $chat_id, message_id: $message_id);
-
-        // Проверяем кеш
+        $chatId = $bot->chatId();
+        $messageId = $bot->callbackQuery()?->message?->message_id;
         $cache = ContentCache::where('content_link', $url)->where('formats', 'audio')->first();
+
         if ($cache && $cache->file_id) {
             $media = InputMediaAudio::make($cache->file_id);
             $media->caption = __('messages.your_audio_file', [], $lang);
-
-            $bot->editMessageMedia(
-                media: $media,
-                chat_id: $chat_id,
-                message_id: $message_id
-            );
+            $bot->editMessageMedia(media: $media, chat_id: $chatId, message_id: $messageId);
             return;
         }
 
-        // Загружаем
-        $result = $this->yt_service->fetch($url, 'audio');
-        if ($result && file_exists($result['path'])) {
-            $cacheChannel = config('nutgram.cache_channel');
-            $msg = null;
-            $file_id = null;
-
-            try {
-                $msg = $bot->sendAudio(
-                    InputFile::make($result['path']),
-                    chat_id: $cacheChannel,
-                    caption: __('messages.your_audio_file', [], $lang)
-                );
-                $file_id = $msg->audio?->file_id;
-            } catch (\Throwable $e) {
-                Log::warning('sendAudio to cache channel failed: ' . $e->getMessage());
-            }
-
-            ContentCache::create([
-                'title'        => $result['title'] ?? 'Audio',
-                'content_link' => $url,
-                'formats'      => 'audio',
-                'chat_id'      => $cacheChannel,
-                'message_id'   => $msg?->message_id,
-                'file_id'      => $file_id,
-                'quality'      => 'audio',
-            ]);
-
-            $media = $file_id
-                ? InputMediaAudio::make($file_id)
-                : InputMediaAudio::make(InputFile::make($result['path']));
-
-            $media->caption = __('messages.your_audio_file', [], $lang);
-
-            $bot->editMessageMedia(
-                media: $media,
-                chat_id: $chat_id,
-                message_id: $message_id
-            );
-        } else {
-            $bot->editMessageText(__('messages.post_download_error', [], $lang), chat_id: $chat_id, message_id: $message_id);
-        }
+        // Если нет в кеше — ставим в очередь
+        $statusMsg = $bot->editMessageText(
+            text: '⏳ ' . __('Messages.queued', [], $lang),
+            chat_id: $chatId,
+            message_id: $messageId
+        );
+        DownloadYouTubeAudioJob::dispatch(
+            userId: $bot->userId(),
+            url: $url,
+            type: 'audio',
+            messageId: $messageId,
+            chatId: $chatId,
+            statusMsgId: $statusMsg->message_id
+        );
     }
 
     /**
@@ -294,34 +268,30 @@ class TelegramController extends Controller
         }
 
         $formats = $this->yt_service->getAvailableFormats($url);
+        $needed_heights = [480, 720, 1080, 1440, 2160];
         $keyboard = InlineKeyboardMarkup::make();
-        $needed_heights = [320, 720, 1080, 2160];
-        $added_heights = [];
 
-        foreach ($formats as $format) {
-            $itag = $format['itag'] ?? null;
-            $height = $format['height'] ?? 0;
-            $filesize = $format['filesize'] ?? 0;
+        // Сначала отсортируем и сгруппируем по height
+        $grouped = collect($formats)
+            ->filter(fn($f) => in_array($f['height'], $needed_heights))
+            ->groupBy('height');
 
-            // Пропускаем, если нет itag, filesize или нужного разрешения
-            if (!$itag || !$filesize || !in_array($height, $needed_heights)) {
-                continue;
-            }
+        foreach ($needed_heights as $height) {
+            if (!isset($grouped[$height])) continue;
 
-            // Если такой height уже был — пропускаем (если нужно только 1 на высоту)
-            if (in_array($height, $added_heights)) {
-                continue;
-            }
+            // Берём самый «тяжёлый» формат с этим разрешением (если вдруг несколько)
+            $best = collect($grouped[$height])
+                ->sortByDesc('filesize')
+                ->first();
 
-            $size = round($filesize / 1048576) . 'MB'; // в мегабайтах
-            $label = "{$size} | {$height}p";
+            $itag = $best['itag'];
+            $sizeMB = round($best['filesize'] / 1048576); // в мегабайтах
+            $label = "{$sizeMB}MB | {$height}p";
             $callback = "yt:format:$itag:$hash";
 
             $keyboard->addRow(
                 InlineKeyboardButton::make($label, callback_data: $callback)
             );
-
-            $added_heights[] = $height;
         }
 
         $bot->editMessageText('📺 Выберите формат видео:', reply_markup: $keyboard);

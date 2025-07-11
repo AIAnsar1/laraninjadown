@@ -2,13 +2,17 @@
 
 namespace App\Jobs;
 
+
+use SergiX44\Nutgram\Nutgram;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
-use Illuminate\Foundation\Bus\Dispatchable;
-use Illuminate\Queue\InteractsWithQueue;
-use Illuminate\Queue\SerializesModels;
-use SergiX44\Nutgram\Nutgram;
+use Illuminate\Queue\{InteractsWithQueue, SerializesModels};
 use SergiX44\Nutgram\Telegram\Types\Internal\InputFile;
+use SergiX44\Nutgram\Telegram\Types\Input\{InputMediaAudio, InputMediaVideo, InputMediaPhoto, InputMediaDocument};
+use Illuminate\Foundation\Bus\Dispatchable;
+use Illuminate\Support\Facades\Log;
+use App\Services\YouTubeService;
+use App\Models\{TelegramUser, ContentCache};
 
 class DownloadYoutubeJob implements ShouldQueue
 {
@@ -36,7 +40,7 @@ class DownloadYoutubeJob implements ShouldQueue
         $result = $service->download($this->url);
         if ($result && file_exists($result['path'])) {
             $bot->editMessageMedia(
-                \SergiX44\Nutgram\Telegram\Types\InputMedia\InputMediaVideo::make()
+                InputMediaVideo::make()
                     ->media(new InputFile($result['path']))
                     ->caption('Ваше видео готово!'),
                 chat_id: $this->chatId,
