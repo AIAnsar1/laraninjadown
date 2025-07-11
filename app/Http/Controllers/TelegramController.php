@@ -108,14 +108,8 @@ class TelegramController extends Controller
                     $this->downloadPinterest($bot, $url);
                 } elseif (preg_match('~x\.com|twitter\.com~i', $url)) {
                     $this->downloadX($bot, $url);
-                } elseif (preg_match('~vk\.com~i', $url)) {
-                    $this->downloadVk($bot, $url);
-                } elseif (preg_match('~ok\.ru~i', $url)) {
-                    $this->downloadOk($bot, $url);
-                } elseif (preg_match('~vimeo\.com~i', $url)) {
-                    $this->downloadVimeo($bot, $url);
-                } elseif (preg_match('~facebook\.com|fb\.watch~i', $url)) {
-                    $this->downloadFacebook($bot, $url);
+                } elseif (preg_match('~tiktok\.com~i', $url, $matches)) {
+                    $this->downloadTikTok($bot, $url);
                 }
             }
         }
@@ -141,7 +135,20 @@ class TelegramController extends Controller
 
     public function downloadTikTok(Nutgram $bot, string $url): void
     {
-        //
+        $lang = $bot->user()?->language ?? 'ru';
+        $caption = __('Messages.instagram_video_downloaded', [], $lang);
+        $messageId = $bot->message()->message_id;
+        $chatId = $bot->chatId();
+        $cache = ContentCache::where('content_link', $url)->first();
+
+        if ($cache && $cache->file_id)
+        {
+            $bot->sendVideo($cache->file_id, caption: $caption, chat_id: $chatId, reply_to_message_id: $messageId);
+            return;
+        }
+        $statusMsg = $bot->sendMessage('⏳ ' . __('Messages.queued', [], $lang), reply_to_message_id: $messageId);
+        $statusMsgId = $statusMsg->message_id;
+        DownloadTikTokJob::dispatch($bot->userId(), $url, 'instagram', $messageId, $chatId, $statusMsgId);
     }
 
     public function downloadPinterest(Nutgram $bot, string $url): void
@@ -159,28 +166,9 @@ class TelegramController extends Controller
         }
         $statusMsg = $bot->sendMessage('⏳ ' . __('Messages.queued', [], $lang), reply_to_message_id: $messageId);
         $statusMsgId = $statusMsg->message_id;
-        DownloadXJob::dispatch($bot->userId(), $url, 'instagram', $messageId, $chatId, $statusMsgId);
+        DownloadXJob::dispatch($bot->userId(), $url, 'pinterest', $messageId, $chatId, $statusMsgId);
     }
 
-    public function downloadFacebook(Nutgram $bot, string $url): void
-    {
-        //
-    }
-
-    public function downloadOk(Nutgram $bot, string $url): void
-    {
-        //
-    }
-
-    public function downloadVimeo(Nutgram $bot, string $url): void
-    {
-        //
-    }
-
-    public function downloadVk(Nutgram $bot, string $url): void
-    {
-        //
-    }
 
     public function downloadX(Nutgram $bot, string $url): void
     {
@@ -197,7 +185,7 @@ class TelegramController extends Controller
         }
         $statusMsg = $bot->sendMessage('⏳ ' . __('Messages.queued', [], $lang), reply_to_message_id: $messageId);
         $statusMsgId = $statusMsg->message_id;
-        DownloadInstagramJob::dispatch($bot->userId(), $url, 'instagram', $messageId, $chatId, $statusMsgId);
+        DownloadInstagramJob::dispatch($bot->userId(), $url, 'x', $messageId, $chatId, $statusMsgId);
     }
 
     /**

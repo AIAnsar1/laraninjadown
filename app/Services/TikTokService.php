@@ -28,7 +28,14 @@ class TikTokService extends BaseService
             logger()->info("Создана папка для загрузки: $outputPath");
         }
 
-        $filenameTemplate = '%(title)s.%(ext)s';
+        // Удалим старые файлы (старше 10 минут)
+        collect(glob($outputPath . '/*'))->each(function ($file) {
+            if (filemtime($file) < now()->subMinutes(10)->getTimestamp()) {
+                unlink($file);
+            }
+        });
+
+        $filenameTemplate = '%(id)s.%(ext)s'; // безопаснее и короче
         $cookiesPath = storage_path('cookies.txt');
 
         $command = [
@@ -39,8 +46,8 @@ class TikTokService extends BaseService
             '--no-playlist',
             '--external-downloader=aria2c',
             '--external-downloader-args=aria2c:-x 16 -k 1M',
-            '--user-agent=Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:140.0) Gecko/20100101 Firefox/140.0',
-            '-f', 'mp4',
+            '--user-agent=Mozilla/5.0 (Linux; Android 10; SM-G970F) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36',
+            '-f', 'best', // безопасный и универсальный
             '-o', $outputPath . '/' . $filenameTemplate,
             $url,
         ];
@@ -62,27 +69,32 @@ class TikTokService extends BaseService
             return false;
         }
 
+        // Найти последние файлы за последние 2 минуты
         $files = glob($outputPath . '/*');
         logger()->info('yt-dlp output dir', ['files' => $files]);
 
-        $latestFile = collect($files)
+        $latestFiles = collect($files)
             ->map(fn($path) => ['path' => $path, 'time' => filemtime($path)])
             ->sortByDesc('time')
-            ->first();
+            ->filter(fn($file) => now()->timestamp - $file['time'] <= 120)
+            ->pluck('path')
+            ->values();
 
-        if (!$latestFile) {
-            logger()->warning("yt-dlp не вернул файл для URL: $url. Содержимое папки:", $files);
+        if ($latestFiles->isEmpty()) {
+            logger()->warning("yt-dlp не вернул файл для URL: $url");
             return false;
         }
 
-        logger()->info('yt-dlp latest file', ['file' => $latestFile]);
+        $filePath = $latestFiles->first();
+
+        logger()->info('yt-dlp latest file', ['file' => $filePath]);
 
         return [
-            'path' => $latestFile['path'],
-            'title' => basename($latestFile['path']),
-            'ext'   => pathinfo($latestFile['path'], PATHINFO_EXTENSION),
-            'url'   => $url,
-            'tt_type' => 'video',
+            'path'     => $filePath,
+            'title'    => basename($filePath),
+            'ext'      => pathinfo($filePath, PATHINFO_EXTENSION),
+            'url'      => $url,
+            'tt_type'  => 'video',
         ];
     }
 }
