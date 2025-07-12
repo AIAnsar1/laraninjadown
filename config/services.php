@@ -35,4 +35,8 @@ return [
         ],
     ],
 
+    'ytdlp' => [
+        'bin' => env('YTDLP_BIN', '/usr/local/bin/yt-dlp'),
+    ],
+
 ];

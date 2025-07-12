@@ -52,7 +52,7 @@ $bot->onCallbackQuery(function (Nutgram $bot) use ($controller) {
         $controller->downloadYoutubeVideo($bot);
     } elseif (preg_match('~^yt:audio:[a-f0-9]+$~', $data)) {
         $controller->downloadYoutubeAudio($bot);
-    } elseif (preg_match('~^yt:format:\d+:[a-f0-9]+$~', $data)) {
+    } elseif (preg_match('~^yt:format:[^:]+:[a-f0-9]+$~', $data)) {
         $controller->downloadYoutubeFormat($bot);
     }
 });

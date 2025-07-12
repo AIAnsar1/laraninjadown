@@ -32,7 +32,10 @@ class DownloadYouTubeAudioJob implements ShouldQueue
 
     public function handle(Nutgram $bot, YouTubeService $yt_service): void
     {
-        $lang = $bot->user()?->language ?? 'ru';
+        $user = TelegramUser::where('user_id', $this->userId)->first();
+        $lang = $user->language ?? 'ru';
+        // Меняем статус на 'Скачивание...'
+        $bot->editMessageText(__('Messages.downloading', [], $lang), chat_id: $this->chatId, message_id: $this->statusMsgId);
 
         // 1. Проверка кеша
         $cache = ContentCache::where('content_link', $this->url)
@@ -41,7 +44,7 @@ class DownloadYouTubeAudioJob implements ShouldQueue
 
         if ($cache && $cache->file_id) {
             $bot->editMessageMedia(
-                InputMediaAudio::make($cache->file_id)->caption(__('messages.your_audio_file', [], $lang)),
+                InputMediaAudio::make($cache->file_id)->caption(__('Messages.your_audio_file', [], $lang)),
                 chat_id: $this->chatId,
                 message_id: $this->statusMsgId
             );
@@ -57,7 +60,7 @@ class DownloadYouTubeAudioJob implements ShouldQueue
             filesize($result['path']) === 0
         ) {
             $bot->editMessageText(
-                __('messages.post_download_error', [], $lang),
+                __('Messages.post_download_error', [], $lang),
                 chat_id: $this->chatId,
                 message_id: $this->statusMsgId
             );
@@ -72,7 +75,6 @@ class DownloadYouTubeAudioJob implements ShouldQueue
             $sent = $bot->sendAudio(
                 InputFile::make($result['path']),
                 chat_id: $cacheChannel,
-                caption: __('messages.your_audio_file', [], $lang)
             );
             $file_id = $sent->audio?->file_id;
             Log::info('Файл для отправки в очередь', [
@@ -99,7 +101,7 @@ class DownloadYouTubeAudioJob implements ShouldQueue
                 ]
             );
             $media = InputMediaAudio::make($file_id);
-            $media->caption = __('messages.your_audio_file', [], $lang);
+            $media->caption = __('Messages.your_audio_file', [], $lang);
             $bot->editMessageMedia(
                 media: $media,
                 chat_id: $this->chatId,
@@ -107,7 +109,7 @@ class DownloadYouTubeAudioJob implements ShouldQueue
             );
         } else {
             $bot->editMessageText(
-                __('messages.post_download_error', [], $lang),
+                __('Messages.post_download_error', [], $lang),
                 chat_id: $this->chatId,
                 message_id: $this->statusMsgId
             );

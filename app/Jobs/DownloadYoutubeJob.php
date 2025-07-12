@@ -18,54 +18,98 @@ class DownloadYoutubeJob implements ShouldQueue
 {
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
-    public $userId, $url, $messageId, $chatId, $statusMsgId;
+    public $userId, $url, $formatString, $messageId, $chatId, $statusMsgId;
 
-    public function __construct($userId, $url, $messageId, $chatId, $statusMsgId)
+    public function __construct($userId, $url, $formatString, $messageId, $chatId, $statusMsgId)
     {
         $this->userId = $userId;
         $this->url = $url;
+        $this->formatString = $formatString;
         $this->messageId = $messageId;
         $this->chatId = $chatId;
         $this->statusMsgId = $statusMsgId;
     }
 
-    public function handle()
+    public function handle(Nutgram $bot, YouTubeService $yt_service): void
     {
-        $bot = app(Nutgram::class);
-        $userQueueKey = "user_queue_{$this->userId}";
-        $activeKey = "active_download_{$this->userId}";
-        $statusKey = "download_status_{$this->userId}_" . md5($this->url);
-        $bot->editMessageText('⏳ Скачивание...', chat_id: $this->chatId, message_id: $this->statusMsgId);
-        $service = app(\App\Services\YouTubeService::class);
-        $result = $service->download($this->url);
-        if ($result && file_exists($result['path'])) {
-            $bot->editMessageMedia(
-                InputMediaVideo::make()
-                    ->media(new InputFile($result['path']))
-                    ->caption('Ваше видео готово!'),
-                chat_id: $this->chatId,
-                message_id: $this->statusMsgId
-            );
-            @unlink($result['path']);
-        } else {
-            $bot->editMessageText('❌ Ошибка при скачивании видео.', chat_id: $this->chatId, message_id: $this->statusMsgId);
+        $user = TelegramUser::where('user_id', $this->userId)->first();
+        $lang = $user->language ?? 'ru';
+        $bot->editMessageText(__('messages.downloading', [], $lang),chat_id: $this->chatId,message_id: $this->statusMsgId);
+        $formats = $yt_service->getAvailableFormats($this->url);
+        $formatMeta = collect($formats)->firstWhere('format_string', $this->formatString);
+        $heightText = 'unknown';
+        $sizeStr = 'unknown';
+
+        if ($formatMeta)
+        {
+            $heightText = $formatMeta['height'] . 'p';
+            $sizeStr = $formatMeta['size_str'];
         }
-        // Удаляем active_download
-        cache()->forget($activeKey);
-        // Берём следующую ссылку из очереди
-        $queue = cache()->get($userQueueKey, []);
-        if (!empty($queue)) {
-            $next = array_shift($queue);
-            cache()->put($userQueueKey, $queue, 600);
-            $nextStatusKey = "download_status_{$this->userId}_" . md5($next['url']);
-            // Меняем статус на "Скачивание..."
-            $bot->editMessageText('⏳ Скачивание...', chat_id: $next['chat_id'], message_id: cache()->get($nextStatusKey));
-            // Ставим active_download
-            cache()->put($activeKey, $next['url'], 600);
-            // Диспатчим следующий Job
-            \App\Jobs\DownloadYoutubeJob::dispatch(
-                $this->userId, $next['url'], $next['message_id'], $next['chat_id'], cache()->get($nextStatusKey)
-            )->onQueue('youtube');
+
+        // Если не удалось, fallback на ID
+        if ($heightText === 'unknown' && strpos($this->formatString, '+') !== false) {
+            $videoFormat = explode('+', $this->formatString)[0];
+            $heightText = [
+                '18' => '360p',
+                '135' => '480p',
+                '136' => '720p',
+                '137' => '1080p',
+                '271' => '1440p',
+                '313' => '2160p',
+            ][$videoFormat] ?? "{$videoFormat}p";
+        }
+        $caption = "📺 {$heightText}  💾 {$sizeStr} | " . __('messages.your_video_file', [], $lang);
+        $cache = ContentCache::where('content_link', $this->url)
+            ->where('formats', 'video')->where('quality', $this->formatString)->first();
+
+        if ($cache && $cache->file_id)
+        {
+            $media = InputMediaVideo::make($cache->file_id);
+            $media->caption = $caption;
+            $bot->editMessageMedia(media: $media,chat_id: $this->chatId,message_id: $this->statusMsgId);
+            return;
+        }
+        Log::info('YT Download: format_string = ' . $this->formatString);
+        $result = $yt_service->fetch($this->url, 'video', $this->formatString);
+
+        if (!$result || empty($result['path']) || !file_exists($result['path']) || filesize($result['path']) === 0)
+        {
+            $bot->editMessageText(__('messages.post_download_error', [], $lang),chat_id: $this->chatId,message_id: $this->statusMsgId);
+            return;
+        }
+        $cacheChannel = config('nutgram.cache_channel');
+        $file_id = null;
+        $sent = null;
+
+        try {
+            $sent = $bot->sendVideo(InputFile::make($result['path']),chat_id: $cacheChannel);
+            $file_id = $sent->video?->file_id;
+        } catch (\Throwable $e) {
+            Log::warning('sendVideo to cache channel failed: ' . $e->getMessage());
+        }
+
+        if ($file_id)
+        {
+            ContentCache::updateOrCreate(
+                ['content_link' => $this->url, 'quality' => $this->formatString],
+                [
+                    'title'      => $result['title'] ?? 'Video',
+                    'formats'    => 'video',
+                    'chat_id'    => $cacheChannel,
+                    'message_id' => $sent?->message_id,
+                    'file_id'    => $file_id,
+                    'quality'    => $this->formatString,
+                ]
+            );
+        }
+        $media = $file_id ? InputMediaVideo::make($file_id) : InputMediaVideo::make(InputFile::make($result['path']));
+        $media->caption = $caption;
+
+        try {
+            $bot->editMessageMedia(media: $media,chat_id: $this->chatId,message_id: $this->statusMsgId);
+        } catch (\Throwable $e) {
+            Log::warning('Ошибка при отправке видео пользователю: ' . $e->getMessage());
+            $bot->editMessageText(__('messages.post_download_error', [], $lang),chat_id: $this->chatId,message_id: $this->statusMsgId);
         }
     }
 }

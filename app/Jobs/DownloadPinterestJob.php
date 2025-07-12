@@ -42,7 +42,10 @@ class DownloadPinterestJob implements ShouldQueue
      */
     public function handle(Nutgram $bot, PinterestService $pg_service)
     {
-        $lang = $bot->user()?->language ?? 'ru';
+        $user = TelegramUser::where('user_id', $this->userId)->first();
+        $lang = $user->language ?? 'ru';
+        // Меняем статус на 'Скачивание...'
+        $bot->editMessageText(__('Messages.downloading', [], $lang), chat_id: $this->chatId, message_id: $this->statusMsgId);
         $caption = __('Messages.instagram_video_downloaded', [], $lang);
         $result = $pg_service->download($this->url);
 
@@ -103,7 +106,7 @@ class DownloadPinterestJob implements ShouldQueue
                 message_id: $this->statusMsgId
             );
         } else {
-            $bot->editMessageText('❌ ' . __('Messages.download_error', [], $lang), chat_id: $this->chatId, message_id: $this->statusMsgId);
+            $bot->editMessageText(__('Messages.download_error', [], $lang), chat_id: $this->chatId, message_id: $this->statusMsgId);
         }
     }
 }
