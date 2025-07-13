@@ -46,12 +46,12 @@ class DownloadInstagramJob implements ShouldQueue
         $user = TelegramUser::where('user_id', $this->userId)->first();
         $lang = $user->language ?? 'ru';
         // Меняем статус на 'Скачивание...'
-        $bot->editMessageText(__('Messages.downloading', [], $lang), chat_id: $this->chatId, message_id: $this->statusMsgId);
-        $caption = __('Messages.instagram_video_downloaded', [], $lang);
+        $bot->editMessageText(__('messages.downloading', [], $lang), chat_id: $this->chatId, message_id: $this->statusMsgId);
+        $caption = __('messages.instagram_video_downloaded', [], $lang);
         $result = $instagramService->download($this->url);
 
         if (!$result) {
-            $bot->editMessageText(__('Messages.no_video_found', [], $lang), chat_id: $this->chatId, message_id: $this->statusMsgId);
+            $bot->editMessageText(__('messages.no_video_found', [], $lang), chat_id: $this->chatId, message_id: $this->statusMsgId);
             return;
         }
 
@@ -63,7 +63,7 @@ class DownloadInstagramJob implements ShouldQueue
         }
 
         if (empty($paths)) {
-            $bot->editMessageText(__('Messages.no_video_found', [], $lang), chat_id: $this->chatId, message_id: $this->statusMsgId);
+            $bot->editMessageText(__('messages.no_video_found', [], $lang), chat_id: $this->chatId, message_id: $this->statusMsgId);
             return;
         }
 
@@ -74,12 +74,10 @@ class DownloadInstagramJob implements ShouldQueue
         foreach ($paths as $path) {
             try {
                 // Загружаем в приватный канал
-                $msg = $bot->sendVideo(
-                    InputFile::make($path),
-                    chat_id: $cacheChannel,
-                );
+                $msg = $bot->sendVideo(InputFile::make($path),chat_id: $cacheChannel);
                 $fileId = $msg->video->file_id ?? $msg->document->file_id ?? $msg->animation->file_id ?? null;
-                if ($fileId) {
+                if ($fileId)
+                {
                     break;
                 }
             } catch (\Throwable $e) {
@@ -101,13 +99,15 @@ class DownloadInstagramJob implements ShouldQueue
                     'message_id' => $msg?->message_id,
                 ]
             );
-            $bot->editMessageMedia(
-                media: InputMediaVideo::make($fileId, caption: $caption),
-                chat_id: $this->chatId,
-                message_id: $this->statusMsgId
-            );
+            ContentCache::flushQueryCache(['content_cache']);
+            $bot->editMessageMedia(media: InputMediaVideo::make($fileId, caption: $caption),chat_id: $this->chatId,message_id: $this->statusMsgId);
         } else {
-            $bot->editMessageText(__('Messages.download_error', [], $lang), chat_id: $this->chatId, message_id: $this->statusMsgId);
+            $bot->editMessageText(__('messages.download_error', [], $lang), chat_id: $this->chatId, message_id: $this->statusMsgId);
+        }
+
+        // Очищаем временные файлы
+        if (isset($result['temp_dir'])) {
+            $instagramService->cleanup();
         }
     }
 }

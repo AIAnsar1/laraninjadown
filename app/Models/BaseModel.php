@@ -7,6 +7,7 @@ use Illuminate\Notifications\Notifiable;
 use Illuminate\Database\Eloquent\{Model, Builder};
 use Spatie\Translatable\HasTranslations;
 use Laravel\Passport\HasApiTokens;
+use Rennokki\QueryCache\Traits\QueryCacheable;
 
 /**
  * App\Models\BaseModel
@@ -20,7 +21,7 @@ use Laravel\Passport\HasApiTokens;
 
  abstract class BaseModel extends Model
  {
-     use HasFactory, HasTranslations, Notifiable, HasApiTokens;
+     use HasFactory, HasTranslations, Notifiable, HasApiTokens, QueryCacheable;
 
      /**
      * The attributes that are mass assignable.
@@ -53,6 +54,21 @@ use Laravel\Passport\HasApiTokens;
 
     ];
 
+    /**
+     * Specify the amount of time to cache queries.
+     * Do not specify or set it to null to disable caching.
+     *
+     * @var int|\DateTime
+     */
+    public $cacheFor = 21600; // cache time, in seconds
+
+    /**
+     * The cache driver to be used.
+     *
+     * @var string
+     */
+    public $cacheDriver = 'redis';
+
     /*
      public function scopeFilter($query, $data)
      {
@@ -72,4 +88,6 @@ use Laravel\Passport\HasApiTokens;
          return $query;
      }
          */
+
+
  }

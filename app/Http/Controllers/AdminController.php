@@ -17,8 +17,11 @@ class AdminController extends Controller
 {
     public function startAd(Nutgram $bot)
     {
+        $lang = $bot->user()?->language ?? 'ru';
+        $messageId = $bot->message()->message_id; // send_link_hint
         if (!in_array($bot->userId(), config('nutgram.admins_id'))) {
-            $bot->sendMessage('❌ Нет доступа.');
+            // $bot->sendMessage('❌ Нет доступа.');
+            # $bot->sendMessage(__('messages.send_link_hint', [], $lang), reply_to_message_id: $messageId);
             return;
         }
 

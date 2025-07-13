@@ -20,6 +20,9 @@ use Illuminate\Support\Facades\Cache;
 
 $controller = app(TelegramController::class);
 
+$bot->onCommand('start', [$controller, 'start']);
+$bot->onCallbackQueryData('lang:(ru|en)', [$controller, 'setLanguage']);
+
 // --- FSM для рекламы ---
 $bot->onCommand('ads_create', [AdminController::class, 'startAd']);
 $bot->onText('/skip', [AdminController::class, 'adFsmSkipMedia']);
@@ -40,8 +43,6 @@ $bot->onText('.*', function (Nutgram $bot) {
     }
 });
 // --- Остальные команды и callback'и ---
-$bot->onCallbackQueryData('lang:(uz|ru|eng)', [$controller, 'setLanguage']);
-$bot->onCommand('start', [$controller, 'start']);
 $bot->onCommand('ads_list', [AdminController::class, 'showAds']);
 $bot->onCallbackQueryData('ads_page:{page}', [AdminController::class, 'showAdsPage']);
 $bot->onCommand('ads_delete {ad_id}', [AdminController::class, 'adsDelete']);

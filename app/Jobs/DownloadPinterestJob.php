@@ -45,12 +45,12 @@ class DownloadPinterestJob implements ShouldQueue
         $user = TelegramUser::where('user_id', $this->userId)->first();
         $lang = $user->language ?? 'ru';
         // Меняем статус на 'Скачивание...'
-        $bot->editMessageText(__('Messages.downloading', [], $lang), chat_id: $this->chatId, message_id: $this->statusMsgId);
-        $caption = __('Messages.instagram_video_downloaded', [], $lang);
+        $bot->editMessageText(__('messages.downloading', [], $lang), chat_id: $this->chatId, message_id: $this->statusMsgId);
+        $caption = __('messages.pinterest_media_downloaded', [], $lang);
         $result = $pg_service->download($this->url);
 
         if (!$result) {
-            $bot->editMessageText(__('Messages.no_video_found', [], $lang), chat_id: $this->chatId, message_id: $this->statusMsgId);
+            $bot->editMessageText(__('messages.no_video_found', [], $lang), chat_id: $this->chatId, message_id: $this->statusMsgId);
             return;
         }
 
@@ -62,7 +62,7 @@ class DownloadPinterestJob implements ShouldQueue
         }
 
         if (empty($paths)) {
-            $bot->editMessageText(__('Messages.no_video_found', [], $lang), chat_id: $this->chatId, message_id: $this->statusMsgId);
+            $bot->editMessageText(__('messages.no_video_found', [], $lang), chat_id: $this->chatId, message_id: $this->statusMsgId);
             return;
         }
 
@@ -100,13 +100,15 @@ class DownloadPinterestJob implements ShouldQueue
                     'message_id' => $msg?->message_id,
                 ]
             );
-            $bot->editMessageMedia(
-                media: InputMediaVideo::make($fileId, caption: $caption),
-                chat_id: $this->chatId,
-                message_id: $this->statusMsgId
-            );
+            ContentCache::flushQueryCache(['content_cache']);
+            $bot->editMessageMedia(media: InputMediaVideo::make($fileId, caption: $caption),chat_id: $this->chatId,message_id: $this->statusMsgId);
         } else {
-            $bot->editMessageText(__('Messages.download_error', [], $lang), chat_id: $this->chatId, message_id: $this->statusMsgId);
+            $bot->editMessageText(__('messages.download_error', [], $lang), chat_id: $this->chatId, message_id: $this->statusMsgId);
+        }
+
+        // Очищаем временные файлы
+        if (isset($result['temp_dir'])) {
+            $pg_service->cleanup();
         }
     }
 }

@@ -97,8 +97,12 @@ class TelegramController extends Controller
                 }
                 $first = false;
             }
-        } else {
-            $bot->sendMessage(__('messages.send_link_hint', [], $lang), reply_to_message_id: $messageId);
+                    } else {
+            // Только если пользователь уже есть в БД — показываем подсказку
+            $exists = TelegramUser::where('user_id', $bot->userId())->get()->exists();
+            if ($exists) {
+                $bot->sendMessage(__('messages.send_link_hint', [], $lang), reply_to_message_id: $messageId);
+            }
         }
     }
 
@@ -108,7 +112,7 @@ class TelegramController extends Controller
         $caption = __('messages.instagram_video_downloaded', [], $lang);
         $messageId = $bot->message()->message_id;
         $chatId = $bot->chatId();
-        $cache = ContentCache::where('content_link', $url)->first();
+        $cache = ContentCache::where('content_link', $url)->get()->first();
 
         if ($cache && $cache->file_id)
         {
@@ -123,7 +127,7 @@ class TelegramController extends Controller
     public function downloadTikTok(Nutgram $bot, string $url): void
     {
         $lang = $bot->user()?->language ?? 'ru';
-        $caption = __('messages.instagram_video_downloaded', [], $lang);
+        $caption = __('messages.tiktok_media_downloaded', [], $lang);
         $messageId = $bot->message()->message_id;
         $chatId = $bot->chatId();
         $cache = ContentCache::where('content_link', $url)->first();
@@ -135,16 +139,16 @@ class TelegramController extends Controller
         }
         $statusMsg = $bot->sendMessage(__('messages.queued', [], $lang), reply_to_message_id: $messageId);
         $statusMsgId = $statusMsg->message_id;
-        DownloadTikTokJob::dispatch($bot->userId(), $url, 'instagram', $messageId, $chatId, $statusMsgId);
+        DownloadTikTokJob::dispatch($bot->userId(), $url, 'tiktok', $messageId, $chatId, $statusMsgId);
     }
 
     public function downloadPinterest(Nutgram $bot, string $url): void
     {
         $lang = $bot->user()?->language ?? 'ru';
-        $caption = __('messages.instagram_video_downloaded', [], $lang);
+        $caption = __('messages.pinterest_media_downloaded', [], $lang);
         $messageId = $bot->message()->message_id;
         $chatId = $bot->chatId();
-        $cache = ContentCache::where('content_link', $url)->first();
+        $cache = ContentCache::where('content_link', $url)->get()->first();
 
         if ($cache && $cache->file_id)
         {
@@ -160,10 +164,10 @@ class TelegramController extends Controller
     public function downloadX(Nutgram $bot, string $url): void
     {
         $lang = $bot->user()?->language ?? 'ru';
-        $caption = __('messages.instagram_video_downloaded', [], $lang);
+        $caption = __('messages.x_video_downloaded', [], $lang);
         $messageId = $bot->message()->message_id;
         $chatId = $bot->chatId();
-        $cache = ContentCache::where('content_link', $url)->first();
+        $cache = ContentCache::where('content_link', $url)->get()->first();
 
         if ($cache && $cache->file_id)
         {
@@ -199,7 +203,7 @@ class TelegramController extends Controller
             $bot->sendMessage(__('messages.link_expired', [], $lang));
             return;
         }
-        $cache = ContentCache::where('content_link', $url)->where('formats', 'audio')->first();
+        $cache = ContentCache::where('content_link', $url)->where('formats', 'audio')->get()->first();
         if ($cache && $cache->file_id)
         {
             $media = InputMediaAudio::make($cache->file_id);
@@ -238,7 +242,7 @@ class TelegramController extends Controller
         }
 
         try {
-            $formats = $this->yt_service->getAvailableFormats($url);
+        $formats = $this->yt_service->getAvailableFormats($url);
             Log::info('YouTube formats received: ' . count($formats));
 
             // Логируем
@@ -258,7 +262,7 @@ class TelegramController extends Controller
                 return;
             }
             $needed_heights = [480, 720, 1080, 1440, 2160];
-            $keyboard = InlineKeyboardMarkup::make();
+        $keyboard = InlineKeyboardMarkup::make();
             $grouped = collect($formats)->filter(fn($f) => in_array($f['height'] ?? null, $needed_heights))->groupBy('height');
             $hasButtons = false;
 
@@ -274,7 +278,7 @@ class TelegramController extends Controller
 
                 if (!$itag)
                 {
-                    continue;
+                continue;
                 }
                 $label = "{$sizeStr} | {$height}p";
                 $callback = "yt:format:{$itag}:{$hash}";
@@ -297,9 +301,8 @@ class TelegramController extends Controller
 
                     if (!$itag)
                     {
-                        continue;
+                continue;
                     }
-
                     $label = "{$sizeStr} | {$height}p";
                     $callback = "yt:format:{$itag}:{$hash}";
                     $fallbackKeyboard->addRow(InlineKeyboardButton::make($label, callback_data: $callback));
@@ -353,7 +356,7 @@ class TelegramController extends Controller
         $lang = $this->getUserLang($bot);
         $chat_id = $bot->chatId();
         $message_id = $bot->callbackQuery()?->message?->message_id;
-        $cache = ContentCache::where('content_link', $url)->where('formats', 'video')->where('quality', $itag)->first();
+        $cache = ContentCache::where('content_link', $url)->where('formats', 'video')->where('quality', $itag)->get()->first();
 
         if ($cache && $cache->file_id)
         {

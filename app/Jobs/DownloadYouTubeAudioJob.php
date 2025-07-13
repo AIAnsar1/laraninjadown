@@ -35,21 +35,28 @@ class DownloadYouTubeAudioJob implements ShouldQueue
         $user = TelegramUser::where('user_id', $this->userId)->first();
         $lang = $user->language ?? 'ru';
         // Меняем статус на 'Скачивание...'
-        $bot->editMessageText(__('Messages.downloading', [], $lang), chat_id: $this->chatId, message_id: $this->statusMsgId);
+        $bot->editMessageText(__('messages.downloading', [], $lang), chat_id: $this->chatId, message_id: $this->statusMsgId);
 
         // 1. Проверка кеша
         $cache = ContentCache::where('content_link', $this->url)
-            ->where('formats', 'audio')
-            ->first();
+            ->where('formats', 'audio')->first();
+
+        Log::info('Checking cache for URL: ' . $this->url, [
+            'cache_found' => $cache ? 'yes' : 'no',
+            'file_id' => $cache?->file_id ?? 'null'
+        ]);
 
         if ($cache && $cache->file_id) {
+            Log::info('Using cached audio file');
             $bot->editMessageMedia(
-                InputMediaAudio::make($cache->file_id)->caption(__('Messages.your_audio_file', [], $lang)),
+                InputMediaAudio::make($cache->file_id)->caption(__('messages.your_audio_file', [], $lang)),
                 chat_id: $this->chatId,
                 message_id: $this->statusMsgId
             );
             return;
         }
+
+        Log::info('Cache not found, downloading audio');
 
         // 2. Скачиваем
         $result = $yt_service->fetch($this->url, 'audio');
@@ -60,7 +67,7 @@ class DownloadYouTubeAudioJob implements ShouldQueue
             filesize($result['path']) === 0
         ) {
             $bot->editMessageText(
-                __('Messages.post_download_error', [], $lang),
+                __('messages.post_download_error', [], $lang),
                 chat_id: $this->chatId,
                 message_id: $this->statusMsgId
             );
@@ -89,6 +96,12 @@ class DownloadYouTubeAudioJob implements ShouldQueue
 
         // Кэшируем только если отправка прошла успешно
         if ($file_id) {
+            Log::info('Saving to cache', [
+                'url' => $this->url,
+                'file_id' => $file_id,
+                'title' => $result['title'] ?? 'Audio'
+            ]);
+
             ContentCache::updateOrCreate(
                 ['content_link' => $this->url],
                 [
@@ -100,8 +113,9 @@ class DownloadYouTubeAudioJob implements ShouldQueue
                     'quality'      => 'audio',
                 ]
             );
+            ContentCache::flushQueryCache(['content_cache']);
             $media = InputMediaAudio::make($file_id);
-            $media->caption = __('Messages.your_audio_file', [], $lang);
+            $media->caption = __('messages.your_audio_file', [], $lang);
             $bot->editMessageMedia(
                 media: $media,
                 chat_id: $this->chatId,
@@ -109,10 +123,15 @@ class DownloadYouTubeAudioJob implements ShouldQueue
             );
         } else {
             $bot->editMessageText(
-                __('Messages.post_download_error', [], $lang),
+                __('messages.post_download_error', [], $lang),
                 chat_id: $this->chatId,
                 message_id: $this->statusMsgId
             );
+        }
+
+        // Очищаем временные файлы
+        if (isset($result['temp_dir'])) {
+            $yt_service->cleanup();
         }
     }
 }

@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Services\BaseService;
+use App\Traits\TempDirectoryTrait;
 use YoutubeDl\YoutubeDl;
 use YoutubeDl\Exception\YoutubeDlException;
 use YoutubeDl\Options;
@@ -11,8 +12,10 @@ use Illuminate\Support\Facades\Log;
 use Symfony\Component\Process\Process;
 use Symfony\Component\Process\Exception\ProcessFailedException;
 
-class YouTubeService
+class YouTubeService extends BaseService
 {
+    use TempDirectoryTrait;
+
     protected string $ytBin;
     protected string $downloadPath;
 
@@ -24,19 +27,17 @@ class YouTubeService
 
     public function fetch(string $url, string $type = 'video', ?string $format = null): array|false
     {
-        if (!is_dir($this->downloadPath)) {
-            mkdir($this->downloadPath, 0777, true);
-        }
+        // Создаем временную директорию
+        $this->createTempDirectory('youtube');
+        $outputPath = $this->getTempDirectory();
 
         $filenameTemplate = '%(title).200s.%(ext)s';
-        $outputPath = $this->downloadPath;
 
         $command = [
             $this->ytBin,
             '--no-warnings',
             '--quiet',
             '--no-playlist',
-            '--restrict-filenames',
             '--merge-output-format', 'mp4',
             '--ffmpeg-location=/usr/local/bin/ffmpeg',
             '--user-agent=Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:140.0) Gecko/20100101 Firefox/140.0',
@@ -58,10 +59,21 @@ class YouTubeService
         ];
 
         if ($type === 'audio') {
+            // Для аудио убираем restrict-filenames и используем более простой шаблон
+            $audioTemplate = '%(title)s.%(ext)s';
             $command[] = '--extract-audio';
             $command[] = '--audio-format=' . ($format ?? 'mp3');
             $command[] = '--audio-quality=0';
-                } else {
+            // Заменяем шаблон для аудио
+            $command = array_map(function($item) use ($outputPath, $audioTemplate, $filenameTemplate) {
+                if ($item === "$outputPath/$filenameTemplate") {
+                    return "$outputPath/$audioTemplate";
+                }
+                return $item;
+            }, $command);
+        } else {
+            // Для видео добавляем restrict-filenames обратно
+            array_splice($command, 4, 0, '--restrict-filenames');
             if ($format) {
                 // Используем конкретный формат
                 Log::info("Downloading format: {$format}");
@@ -72,6 +84,7 @@ class YouTubeService
                 $command[] = '-f';
                 $command[] = 'bestvideo+bestaudio/best';
             }
+
         }
 
         $command[] = $url;
@@ -117,6 +130,23 @@ class YouTubeService
                     $url
                 ];
 
+                // Для fallback команды тоже учитываем тип
+                if ($type === 'audio') {
+                    // Убираем restrict-filenames для аудио в fallback
+                    $fallbackCommand = array_filter($fallbackCommand, function($item) {
+                        return $item !== '--restrict-filenames';
+                    });
+                    $fallbackCommand = array_values($fallbackCommand);
+
+                    // Заменяем шаблон для аудио
+                    $fallbackCommand = array_map(function($item) use ($outputPath, $filenameTemplate) {
+                        if ($item === "$outputPath/$filenameTemplate") {
+                            return "$outputPath/%(title)s.%(ext)s";
+                        }
+                        return $item;
+                    }, $fallbackCommand);
+                }
+
                 Log::info('YouTube fallback command: ' . json_encode($fallbackCommand));
 
                 $fallbackProcess = new Process($fallbackCommand);
@@ -145,12 +175,36 @@ class YouTubeService
             return false;
         }
 
+        // Получаем красивое название файла без расширения
+        $filename = basename($latestFile['path']);
+        $extension = pathinfo($latestFile['path'], PATHINFO_EXTENSION);
+        $title = str_replace('.' . $extension, '', $filename);
+
+        Log::info('Processing downloaded file', [
+            'original_filename' => $filename,
+            'type' => $type,
+            'extension' => $extension
+        ]);
+
+        // Для аудио сохраняем оригинальное название, для видео очищаем от лишних символов
+        if ($type === 'audio') {
+            // Для аудио просто убираем расширение и лишние символы в конце
+            $title = trim($title);
+            Log::info('Audio title after processing: ' . $title);
+        } else {
+            // Для видео очищаем название от лишних символов
+            $title = preg_replace('/[^\w\s\-\.]/', '', $title);
+            $title = trim($title);
+            Log::info('Video title after processing: ' . $title);
+        }
+
         return [
             'path' => $latestFile['path'],
-            'title' => basename($latestFile['path']),
-            'ext' => pathinfo($latestFile['path'], PATHINFO_EXTENSION),
+            'title' => $title ?: 'YouTube Audio',
+            'ext' => $extension,
             'type' => $type,
             'url' => $url,
+            'temp_dir' => $this->tempDir, // Передаем путь к временной директории для последующей очистки
         ];
     }
 
@@ -163,8 +217,9 @@ class YouTubeService
             '--skip-download',
             '--print-json',
             '--no-playlist',
-            '--restrict-filenames',
-            '--user-agent=Mozilla/5.0',
+            '--user-agent=Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:140.0) Gecko/20100101 Firefox/140.0',
+            '--geo-bypass',
+            '--no-check-certificate',
             '--geo-bypass',
             $url
         ];
@@ -291,5 +346,13 @@ class YouTubeService
     public function isYoutubeUrl(string $url): bool
     {
         return preg_match('~^https?://(www\.)?(youtube\.com|youtu\.be)/~i', $url);
+    }
+
+    /**
+     * Очищает временные файлы после использования
+     */
+    public function cleanup(): void
+    {
+        $this->cleanupTempDirectory();
     }
 }

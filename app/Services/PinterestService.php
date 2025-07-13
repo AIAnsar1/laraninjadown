@@ -2,18 +2,18 @@
 
 namespace App\Services;
 
-
-use App\Services\BaseService;
+use App\Traits\TempDirectoryTrait;
 use YoutubeDl\{YoutubeDl, Options};
 use YoutubeDl\Exception\YoutubeDlException;
 use Symfony\Component\Process\Process;
 use Symfony\Component\Process\Exception\ProcessFailedException;
 use Illuminate\Support\Str;
-
-
+use Illuminate\Support\Facades\Log;
 
 class PinterestService extends BaseService
 {
+    use TempDirectoryTrait;
+
     protected string $ytBin;
 
     public function __construct()
@@ -23,11 +23,9 @@ class PinterestService extends BaseService
 
     public function download(string $url): array|false
     {
-        $outputDir = storage_path('app/pinterest');
-        if (!is_dir($outputDir)) {
-            mkdir($outputDir, 0777, true);
-            logger()->info("Создана папка для загрузки: $outputDir");
-        }
+        // Создаем временную директорию
+        $this->createTempDirectory('pinterest');
+        $outputDir = $this->getTempDirectory();
 
         $outputTemplate = $outputDir . '/%(title)s.%(ext)s';
         $cookiesPath = storage_path('cookies.txt');
@@ -49,16 +47,17 @@ class PinterestService extends BaseService
             $cmd[] = '--cookies=' . $cookiesPath;
         }
 
-        logger()->info('yt-dlp command', ['command' => implode(' ', $cmd)]);
+        Log::info('yt-dlp command', ['command' => implode(' ', $cmd)]);
 
         $process = new \Symfony\Component\Process\Process($cmd);
         $process->run();
 
-        logger()->info('yt-dlp stdout', ['stdout' => $process->getOutput()]);
-        logger()->info('yt-dlp stderr', ['stderr' => $process->getErrorOutput()]);
+        Log::info('yt-dlp stdout', ['stdout' => $process->getOutput()]);
+        Log::info('yt-dlp stderr', ['stderr' => $process->getErrorOutput()]);
 
         if (!$process->isSuccessful()) {
-            logger()->error("yt-dlp failed: " . $process->getErrorOutput());
+            Log::error("yt-dlp failed: " . $process->getErrorOutput());
+            $this->cleanupTempDirectory();
             return false;
         }
 
@@ -77,7 +76,8 @@ class PinterestService extends BaseService
         });
 
         if (empty($mediaFiles)) {
-            logger()->warning("yt-dlp не вернул медиа-файлов для: $url");
+            Log::warning("yt-dlp не вернул медиа-файлов для: $url");
+            $this->cleanupTempDirectory();
             return false;
         }
 
@@ -90,6 +90,7 @@ class PinterestService extends BaseService
                 'type' => $this->detectType($path),
                 'title' => pathinfo($path, PATHINFO_FILENAME),
                 'url' => $url,
+                'temp_dir' => $this->tempDir, // Передаем путь к временной директории для последующей очистки
             ];
         }
 
@@ -107,6 +108,7 @@ class PinterestService extends BaseService
             'types' => array_map([$this, 'detectType'], $paths),
             'title' => Str::slug(pathinfo($paths[0], PATHINFO_FILENAME)),
             'url' => $url,
+            'temp_dir' => $this->tempDir, // Передаем путь к временной директории для последующей очистки
         ];
     }
 
@@ -114,6 +116,14 @@ class PinterestService extends BaseService
     {
         $ext = strtolower(pathinfo($file, PATHINFO_EXTENSION));
         return in_array($ext, ['mp4', 'mkv', 'webm']) ? 'video' : 'photo';
+    }
+
+    /**
+     * Очищает временные файлы после использования
+     */
+    public function cleanup(): void
+    {
+        $this->cleanupTempDirectory();
     }
 }
 

@@ -2,19 +2,13 @@
 
 namespace App\Services;
 
-
-use App\Services\BaseService;
-use YoutubeDl\Options;
-use YoutubeDl\YoutubeDl;
-use YoutubeDl\Exception\YoutubeDlException;
-use Symfony\Component\Process\Process;
-use Symfony\Component\Process\Exception\ProcessFailedException;
+use App\Traits\TempDirectoryTrait;
 use Illuminate\Support\Facades\Log;
-
-
 
 class InstagramService extends BaseService
 {
+    use TempDirectoryTrait;
+
     protected string $ytBin;
 
     public function __construct()
@@ -24,10 +18,9 @@ class InstagramService extends BaseService
 
     public function download($url)
     {
-        $outputDir = storage_path('app/instagram');
-        if (!is_dir($outputDir)) {
-            mkdir($outputDir, 0777, true);
-        }
+        // Создаем временную директорию
+        $this->createTempDirectory('instagram');
+        $outputDir = $this->getTempDirectory();
 
         // 📌 Уникальное имя для каждой ссылки
         $hash = md5($url);
@@ -39,6 +32,7 @@ class InstagramService extends BaseService
 
         if ($code !== 0) {
             Log::error("yt-dlp вернул код $code при скачивании $url");
+            $this->cleanupTempDirectory();
             return null;
         }
 
@@ -46,6 +40,7 @@ class InstagramService extends BaseService
         $files = glob("{$outputDir}/{$hash}.*");
 
         if (empty($files)) {
+            $this->cleanupTempDirectory();
             return null;
         }
 
@@ -56,6 +51,7 @@ class InstagramService extends BaseService
         });
 
         if (empty($videoFiles)) {
+            $this->cleanupTempDirectory();
             return null;
         }
 
@@ -66,6 +62,7 @@ class InstagramService extends BaseService
                 'ext' => pathinfo($path, PATHINFO_EXTENSION),
                 'type' => 'video',
                 'title' => $hash,
+                'temp_dir' => $this->tempDir, // Передаем путь к временной директории для последующей очистки
             ];
         }
 
@@ -77,6 +74,15 @@ class InstagramService extends BaseService
             }, $videoFiles),
             'types' => array_fill(0, count($videoFiles), 'video'),
             'title' => $hash,
+            'temp_dir' => $this->tempDir, // Передаем путь к временной директории для последующей очистки
         ];
+    }
+
+    /**
+     * Очищает временные файлы после использования
+     */
+    public function cleanup(): void
+    {
+        $this->cleanupTempDirectory();
     }
 }

@@ -10,7 +10,7 @@ return [
     'queued' => "⏳ Добавлено в очередь. Ожидайте...",
     'downloading' => "⏳ Скачивание... Пожалуйста, подождите!",
     'processing' => '⏳ Обработка... Пожалуйста, подождите!',
-    'no_video_found' => "❌ Видео не найдено.",
+    'no_video_found' => "🙌🏻 Прости, чел, я пытался получить данные по твоей ссылке, но не смог 😞 Возможно, что-то происходит на стороне сервера. Попробуй другую ссылку или повтори позже.",
     'download_error' => "❌ Ошибка при скачивании.",
     'post_download_error' => "❌ Ошибка при скачивании поста.",
     'your_audio_file' => "🎵 320kbps | ✅ Ваш Аудио с YouTube! @NinjaDownloaderBot",
@@ -22,12 +22,9 @@ return [
     'instagram_video_downloaded' => '✅ Ваше видео из Instagram! @NinjaDownloaderBot',
     'instagram_photo_downloaded' => '✅ Ваше фото из Instagram! @NinjaDownloaderBot',
     'instagram_media_downloaded' => '✅ Ваш файл из Instagram! @NinjaDownloaderBot',
-    'x_video_downloaded' => '✅ Ваше видео с X (Twitter)! @NinjaDownloaderBot',
-    'vk_music_downloaded' => '✅ Ваша музыка с VK! @NinjaDownloaderBot',
-    'vk_clip_downloaded' => '✅ Ваш VK Клип! @NinjaDownloaderBot',
-    'ok_video_downloaded' => '✅ Ваше видео с OK! @NinjaDownloaderBot',
-    'vimeo_video_downloaded' => '✅ Ваше видео с Vimeo! @NinjaDownloaderBot',
-    'facebook_video_downloaded' => '✅ Ваше видео с Facebook! @NinjaDownloaderBot',
+    'pinterest_media_downloaded' => '✅ Ваш Медиа файл из Pinterest! @NinjaDownloaderBot',
+    'tiktok_media_downloaded' => '✅ Ваш Медиа файл из TikTok! @NinjaDownloaderBot',
+    'x_video_downloaded' => '✅ Ваше Медиа файл с X (Twitter)! @NinjaDownloaderBot',
     'unsupported_link' => '❌ Эта ссылка не поддерживается. Поддерживаемые сервисы: Instagram, TikTok, Pinterest, X (Twitter), YouTube.',
     'send_link_hint' => '🔗 Пожалуйста, отправьте ссылку на видео из Instagram, TikTok, Pinterest, X (Twitter) или YouTube.',
     'btn_audio' => '🎵 Аудио',

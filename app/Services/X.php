@@ -2,17 +2,17 @@
 
 namespace App\Services;
 
-
-use App\Services\BaseService;
+use App\Traits\TempDirectoryTrait;
 use YoutubeDl\{YoutubeDl, Options};
 use YoutubeDl\Exception\YoutubeDlException;
 use Symfony\Component\Process\Process;
 use Symfony\Component\Process\Exception\ProcessFailedException;
-
-
+use Illuminate\Support\Facades\Log;
 
 class X extends BaseService
 {
+    use TempDirectoryTrait;
+
     protected string $ytBin;
 
     public function __construct()
@@ -22,18 +22,9 @@ class X extends BaseService
 
     public function download(string $url): array|false
     {
-        $outputPath = storage_path('app/x');
-        if (!is_dir($outputPath)) {
-            mkdir($outputPath, 0777, true);
-            logger()->info("Создана папка для загрузки: $outputPath");
-        }
-
-        // Очистим старые файлы (например, старше 10 минут)
-        collect(glob($outputPath . '/*'))->each(function ($file) {
-            if (filemtime($file) < now()->subMinutes(10)->getTimestamp()) {
-                unlink($file);
-            }
-        });
+        // Создаем временную директорию
+        $this->createTempDirectory('x');
+        $outputPath = $this->getTempDirectory();
 
         $filenameTemplate = '%(title)s.%(ext)s';
         $cookiesPath = storage_path('cookies_x.txt'); // если авторизация нужна
@@ -54,21 +45,22 @@ class X extends BaseService
             $command[] = '--cookies=' . $cookiesPath;
         }
 
-        logger()->info('yt-dlp command', ['command' => implode(' ', $command)]);
+        Log::info('yt-dlp command', ['command' => implode(' ', $command)]);
 
         $process = new Process($command);
         $process->run();
 
-        logger()->info('yt-dlp stdout', ['stdout' => $process->getOutput()]);
-        logger()->info('yt-dlp stderr', ['stderr' => $process->getErrorOutput()]);
+        Log::info('yt-dlp stdout', ['stdout' => $process->getOutput()]);
+        Log::info('yt-dlp stderr', ['stderr' => $process->getErrorOutput()]);
 
         if (!$process->isSuccessful()) {
-            logger()->error("yt-dlp failed: " . $process->getErrorOutput());
+            Log::error("yt-dlp failed: " . $process->getErrorOutput());
+            $this->cleanupTempDirectory();
             return false;
         }
 
         $files = glob($outputPath . '/*');
-        logger()->info('yt-dlp output dir', ['files' => $files]);
+        Log::info('yt-dlp output dir', ['files' => $files]);
 
         $latestFile = collect($files)
             ->map(fn($path) => ['path' => $path, 'time' => filemtime($path)])
@@ -76,7 +68,8 @@ class X extends BaseService
             ->first();
 
         if (!$latestFile) {
-            logger()->warning("yt-dlp не вернул файл для URL: $url. Содержимое папки:", $files);
+            Log::warning("yt-dlp не вернул файл для URL: $url. Содержимое папки:", $files);
+            $this->cleanupTempDirectory();
             return false;
         }
 
@@ -84,6 +77,15 @@ class X extends BaseService
             'paths' => [$latestFile['path']],
             'exts' => [pathinfo($latestFile['path'], PATHINFO_EXTENSION)],
             'type' => 'video',
+            'temp_dir' => $this->tempDir, // Передаем путь к временной директории для последующей очистки
         ];
+    }
+
+    /**
+     * Очищает временные файлы после использования
+     */
+    public function cleanup(): void
+    {
+        $this->cleanupTempDirectory();
     }
 }

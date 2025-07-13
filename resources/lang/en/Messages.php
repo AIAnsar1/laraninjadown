@@ -9,7 +9,7 @@ return [
     'queued' => "⏳ Added to queue. Please wait...",
     'downloading' => "⏳ Downloading... Please wait!",
     'processing' => '⏳ Processing... Please wait!',
-    'no_video_found' => "❌ No video found.",
+    'no_video_found' => "🙌🏻 Sorry buddy, I tried to fetch data from your link but couldn’t 😞 Maybe something’s going on with the server. Try another link or check back later.",
     'download_error' => "❌ Download error.",
     'post_download_error' => "❌ Error downloading post.",
     'your_audio_file' => "🎵 320kbps | ✅ Your Audio from YouTube! @NinjaDownloaderBot",

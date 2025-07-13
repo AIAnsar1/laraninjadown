@@ -2,16 +2,17 @@
 
 namespace App\Services;
 
-
-use App\Services\BaseService;
+use App\Traits\TempDirectoryTrait;
 use YoutubeDl\{YoutubeDl, Options};
 use YoutubeDl\Exception\YoutubeDlException;
 use Symfony\Component\Process\Process;
 use Symfony\Component\Process\Exception\ProcessFailedException;
-
+use Illuminate\Support\Facades\Log;
 
 class TikTokService extends BaseService
 {
+    use TempDirectoryTrait;
+
     protected string $ytBin;
 
     public function __construct()
@@ -21,19 +22,9 @@ class TikTokService extends BaseService
 
     public function download(string $url): array|false
     {
-        $outputPath = storage_path('app/tiktok');
-
-        if (!is_dir($outputPath)) {
-            mkdir($outputPath, 0777, true);
-            logger()->info("Создана папка для загрузки: $outputPath");
-        }
-
-        // Удалим старые файлы (старше 10 минут)
-        collect(glob($outputPath . '/*'))->each(function ($file) {
-            if (filemtime($file) < now()->subMinutes(10)->getTimestamp()) {
-                unlink($file);
-            }
-        });
+        // Создаем временную директорию
+        $this->createTempDirectory('tiktok');
+        $outputPath = $this->getTempDirectory();
 
         $filenameTemplate = '%(id)s.%(ext)s'; // безопаснее и короче
         $cookiesPath = storage_path('cookies.txt');
@@ -56,22 +47,23 @@ class TikTokService extends BaseService
             $command[] = '--cookies=' . $cookiesPath;
         }
 
-        logger()->info('yt-dlp command', ['command' => implode(' ', $command)]);
+        Log::info('yt-dlp command', ['command' => implode(' ', $command)]);
 
         $process = new Process($command);
         $process->run();
 
-        logger()->info('yt-dlp stdout', ['stdout' => $process->getOutput()]);
-        logger()->info('yt-dlp stderr', ['stderr' => $process->getErrorOutput()]);
+        Log::info('yt-dlp stdout', ['stdout' => $process->getOutput()]);
+        Log::info('yt-dlp stderr', ['stderr' => $process->getErrorOutput()]);
 
         if (!$process->isSuccessful()) {
-            logger()->error("yt-dlp failed: " . $process->getErrorOutput());
+            Log::error("yt-dlp failed: " . $process->getErrorOutput());
+            $this->cleanupTempDirectory();
             return false;
         }
 
         // Найти последние файлы за последние 2 минуты
         $files = glob($outputPath . '/*');
-        logger()->info('yt-dlp output dir', ['files' => $files]);
+        Log::info('yt-dlp output dir', ['files' => $files]);
 
         $latestFiles = collect($files)
             ->map(fn($path) => ['path' => $path, 'time' => filemtime($path)])
@@ -81,13 +73,14 @@ class TikTokService extends BaseService
             ->values();
 
         if ($latestFiles->isEmpty()) {
-            logger()->warning("yt-dlp не вернул файл для URL: $url");
+            Log::warning("yt-dlp не вернул файл для URL: $url");
+            $this->cleanupTempDirectory();
             return false;
         }
 
         $filePath = $latestFiles->first();
 
-        logger()->info('yt-dlp latest file', ['file' => $filePath]);
+        Log::info('yt-dlp latest file', ['file' => $filePath]);
 
         return [
             'path'     => $filePath,
@@ -95,6 +88,15 @@ class TikTokService extends BaseService
             'ext'      => pathinfo($filePath, PATHINFO_EXTENSION),
             'url'      => $url,
             'tt_type'  => 'video',
+            'temp_dir' => $this->tempDir, // Передаем путь к временной директории для последующей очистки
         ];
+    }
+
+    /**
+     * Очищает временные файлы после использования
+     */
+    public function cleanup(): void
+    {
+        $this->cleanupTempDirectory();
     }
 }

@@ -102,6 +102,7 @@ class DownloadYoutubeJob implements ShouldQueue
                 ]
             );
         }
+        ContentCache::flushQueryCache(['content_cache']);
         $media = $file_id ? InputMediaVideo::make($file_id) : InputMediaVideo::make(InputFile::make($result['path']));
         $media->caption = $caption;
 
@@ -110,6 +111,11 @@ class DownloadYoutubeJob implements ShouldQueue
         } catch (\Throwable $e) {
             Log::warning('Ошибка при отправке видео пользователю: ' . $e->getMessage());
             $bot->editMessageText(__('messages.post_download_error', [], $lang),chat_id: $this->chatId,message_id: $this->statusMsgId);
+        }
+
+        // Очищаем временные файлы
+        if (isset($result['temp_dir'])) {
+            $yt_service->cleanup();
         }
     }
 }
