@@ -111,4 +111,10 @@ class DownloadPinterestJob implements ShouldQueue
             $pg_service->cleanup();
         }
     }
+
+
+    public function viaQueue()
+    {
+        return 'pinterest';
+    }
 }

@@ -111,4 +111,10 @@ class DownloadTikTokJob implements ShouldQueue
             $tt_service->cleanup();
         }
     }
+
+
+    public function viaQueue()
+    {
+        return 'tiktok';
+    }
 }

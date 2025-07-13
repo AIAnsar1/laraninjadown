@@ -115,4 +115,9 @@ class DownloadXJob implements ShouldQueue
             $x_service->cleanup();
         }
     }
+
+    public function viaQueue()
+    {
+        return 'x';
+    }
 }

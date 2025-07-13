@@ -118,4 +118,10 @@ class DownloadYoutubeJob implements ShouldQueue
             $yt_service->cleanup();
         }
     }
+
+
+    public function viaQueue()
+    {
+        return 'youtube';
+    }
 }

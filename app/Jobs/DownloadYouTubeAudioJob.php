@@ -134,4 +134,9 @@ class DownloadYouTubeAudioJob implements ShouldQueue
             $yt_service->cleanup();
         }
     }
+
+    public function viaQueue()
+    {
+        return 'youtube-audio';
+    }
 }

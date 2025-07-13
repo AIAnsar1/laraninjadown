@@ -121,7 +121,7 @@ class TelegramController extends Controller
         }
         $statusMsg = $bot->sendMessage(__('messages.queued', [], $lang), reply_to_message_id: $messageId);
         $statusMsgId = $statusMsg->message_id;
-        DownloadInstagramJob::dispatch($bot->userId(), $url, 'instagram', $messageId, $chatId, $statusMsgId);
+        DownloadInstagramJob::dispatch($bot->userId(), $url, 'instagram', $messageId, $chatId, $statusMsgId)->onQueue('instagram');
     }
 
     public function downloadTikTok(Nutgram $bot, string $url): void
@@ -139,7 +139,7 @@ class TelegramController extends Controller
         }
         $statusMsg = $bot->sendMessage(__('messages.queued', [], $lang), reply_to_message_id: $messageId);
         $statusMsgId = $statusMsg->message_id;
-        DownloadTikTokJob::dispatch($bot->userId(), $url, 'tiktok', $messageId, $chatId, $statusMsgId);
+        DownloadTikTokJob::dispatch($bot->userId(), $url, 'tiktok', $messageId, $chatId, $statusMsgId)->onQueue('tiktok');
     }
 
     public function downloadPinterest(Nutgram $bot, string $url): void
@@ -157,7 +157,7 @@ class TelegramController extends Controller
         }
         $statusMsg = $bot->sendMessage(__('messages.queued', [], $lang), reply_to_message_id: $messageId);
         $statusMsgId = $statusMsg->message_id;
-        DownloadPinterestJob::dispatch($bot->userId(), $url, 'pinterest', $messageId, $chatId, $statusMsgId);
+        DownloadPinterestJob::dispatch($bot->userId(), $url, 'pinterest', $messageId, $chatId, $statusMsgId)->onQueue('pinterest');
     }
 
 
@@ -176,7 +176,7 @@ class TelegramController extends Controller
         }
         $statusMsg = $bot->sendMessage(__('messages.queued', [], $lang), reply_to_message_id: $messageId);
         $statusMsgId = $statusMsg->message_id;
-        DownloadXJob::dispatch($bot->userId(), $url, 'x', $messageId, $chatId, $statusMsgId);
+        DownloadXJob::dispatch($bot->userId(), $url, 'x', $messageId, $chatId, $statusMsgId)->onQueue('x');
     }
 
     /**
@@ -212,7 +212,7 @@ class TelegramController extends Controller
             return;
         }
         $statusMsg = $bot->editMessageText(text: __('messages.queued', [], $lang),chat_id: $chatId,message_id: $messageId);
-        DownloadYouTubeAudioJob::dispatch(userId: $bot->userId(),url: $url,type: 'audio',messageId: $messageId,chatId: $chatId,statusMsgId: $statusMsg->message_id);
+        DownloadYouTubeAudioJob::dispatch(userId: $bot->userId(),url: $url,type: 'audio',messageId: $messageId,chatId: $chatId,statusMsgId: $statusMsg->message_id)->onQueue('youtube-audio');
     }
 
     /**
@@ -367,7 +367,7 @@ class TelegramController extends Controller
         }
         $statusMsg = $bot->editMessageText(text: __('messages.queued', [], $lang),chat_id: $chat_id,message_id: $message_id);
         Log::info('Dispatching YouTube download job: itag=' . $itag . ', url=' . $url);
-        DownloadYoutubeJob::dispatch(userId: $bot->userId(),url: $url,formatString: $formatString,messageId: $message_id,chatId: $chat_id,statusMsgId: $statusMsg->message_id);
+        DownloadYoutubeJob::dispatch(userId: $bot->userId(),url: $url,formatString: $formatString,messageId: $message_id,chatId: $chat_id,statusMsgId: $statusMsg->message_id)->onQueue('youtube');
     }
     protected function getUserLang(Nutgram $bot)
     {

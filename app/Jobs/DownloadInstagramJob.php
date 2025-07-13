@@ -110,4 +110,10 @@ class DownloadInstagramJob implements ShouldQueue
             $instagramService->cleanup();
         }
     }
+
+
+    public function viaQueue()
+    {
+        return 'instagram';
+    }
 }
