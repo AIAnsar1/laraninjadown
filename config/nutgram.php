@@ -33,5 +33,9 @@ return [
 
     'admins_id' => [
         "admin_id1" => env("TELEGRAM_ADMIN_ID1"),
+        "admin_id2" => env("TELEGRAM_ADMIN_ID2"),
+        "admin_id3" => env("TELEGRAM_ADMIN_ID3"),
+        "admin_id4" => env("TELEGRAM_ADMIN_ID4"),
+        "admin_id5" => env("TELEGRAM_ADMIN_ID5"),
     ],
 ];
